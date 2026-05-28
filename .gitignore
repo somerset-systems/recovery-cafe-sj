@@ -3,3 +3,4 @@ node_modules/
 dist/
 google-credentials.json
 .google-token.json
+google-credentials.json.json
