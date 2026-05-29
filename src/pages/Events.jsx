@@ -1,34 +1,33 @@
 import { useState, useEffect } from 'react'
-import { db } from '../lib/supabase.js'
+import { fetchAllEvents } from '../lib/googleCalendar.js'
 import { colors, fontSize } from '../theme.js'
 
 const TAG_STYLES = {
-  Class:    { bg: colors.tagClassBg,    text: colors.tagClass },
-  Workshop: { bg: colors.tagWorkshopBg, text: colors.tagWorkshop },
-  Music:    { bg: colors.tagMusicBg,    text: colors.tagMusic },
-  Special:  { bg: colors.tagSpecialBg,  text: colors.tagSpecial },
+  Event:                  { bg: colors.tagEventBg, text: colors.tagEvent },
+  Music:                  { bg: colors.tagMusicBg, text: colors.tagMusic },
+  Class:                  { bg: colors.tagClassBg, text: colors.tagClass },
+  'School for Recovery':  { bg: colors.tagSchoolBg, text: colors.tagSchool },
 }
 
 function parseDateParts(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
   return {
-    day: d.getDate(),
-    month: d.toLocaleDateString('en-US', { month: 'short' }),
+    day:     d.getDate(),
+    month:   d.toLocaleDateString('en-US', { month: 'short' }),
     weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
   }
 }
 
 export default function Events() {
-  const [events, setEvents] = useState([])
+  const [events, setEvents]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
 
   useEffect(() => {
-    db.getUpcomingEvents().then(({ data, error: err }) => {
-      if (err) setError(err.message || 'Could not load events.')
-      else setEvents(data || [])
-      setLoading(false)
-    })
+    fetchAllEvents()
+      .then(setEvents)
+      .catch(err => setError(err.message || 'Could not load events.'))
+      .finally(() => setLoading(false))
   }, [])
 
   return (
@@ -53,13 +52,13 @@ export default function Events() {
       )}
 
       {!loading && !error && events.length === 0 && (
-        <p style={{ color: colors.textMedium, fontSize: fontSize.body }}>No upcoming events.</p>
+        <p style={{ color: colors.textMedium, fontSize: fontSize.body }}>No upcoming events in the next 30 days.</p>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {events.map((event) => {
           const { day, month, weekday } = parseDateParts(event.event_date)
-          const tagStyle = TAG_STYLES[event.tag] || { bg: colors.border, text: colors.textMedium }
+          const tagStyle = TAG_STYLES[event.tag] || TAG_STYLES.Event
           return (
             <div
               key={event.id}
@@ -102,8 +101,8 @@ export default function Events() {
                 <p style={{ margin: '0 0 4px 0', fontSize: fontSize.medium, fontWeight: 700, color: colors.textDark }}>
                   {event.title}
                 </p>
-                <p style={{ margin: '0 0 4px 0', fontSize: fontSize.body, color: colors.textMedium }}>
-                  {event.event_time} · {event.location}
+                <p style={{ margin: '0 0 8px 0', fontSize: fontSize.body, color: colors.textMedium }}>
+                  {[event.event_time, event.location].filter(Boolean).join(' · ')}
                 </p>
                 <span
                   style={{

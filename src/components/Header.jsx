@@ -3,9 +3,18 @@ import { colors, fontSize } from '../theme.js'
 
 const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_logo.png'
 
+const SUBTITLES = [
+  "We're glad you're here today.",
+  'You belong here.',
+  'Keep showing up. It matters.',
+  'Today is a good day to be here.',
+  'This community loves you.',
+]
+
 export default function Header({ memberName }) {
   const firstName = memberName ? memberName.split(' ')[0] : ''
   const [logoVisible, setLogoVisible] = useState(true)
+  const [subtitle] = useState(() => SUBTITLES[Math.floor(Math.random() * SUBTITLES.length)])
 
   return (
     <div
@@ -23,7 +32,7 @@ export default function Header({ memberName }) {
         paddingTop: 14,
         paddingBottom: 14,
         zIndex: 100,
-        minHeight: 88,
+        minHeight: 104,
         boxSizing: 'border-box',
       }}
     >
@@ -51,6 +60,17 @@ export default function Header({ memberName }) {
         >
           {firstName || 'Friend'}
         </span>
+        <span
+          style={{
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: fontSize.body,
+            fontWeight: 400,
+            lineHeight: 1.3,
+            marginTop: 2,
+          }}
+        >
+          {subtitle}
+        </span>
       </div>
 
       {logoVisible && (
@@ -69,7 +89,7 @@ export default function Header({ memberName }) {
             alt="Recovery Cafe SJ"
             onError={() => setLogoVisible(false)}
             style={{
-              width: 80,
+              width: 96,
               height: 'auto',
               display: 'block',
               objectFit: 'contain',

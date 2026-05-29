@@ -52,7 +52,10 @@ function parseCircleLabel(label) {
     const [, dayAbbr, hour, minute, leader] = fmt1
     const day = DAY_MAP[dayAbbr.toLowerCase()]
     if (!day) return null
-    const isPm = parseInt(hour, 10) >= 12 || trimmed.toLowerCase().includes('pm')
+    const h = parseInt(hour, 10)
+    const labelLower = trimmed.toLowerCase()
+    // If label has explicit am/pm use it; otherwise hours 1-6 → PM, 7-11 → AM, 12 → PM
+    const isPm = labelLower.includes('pm') || (!labelLower.includes('am') && ((h >= 1 && h <= 6) || h === 12))
     return { day, time: formatTime(hour, minute, isPm), leader: leader.trim() }
   }
 
@@ -172,7 +175,10 @@ async function getGoogleAuth() {
 
   const authUrl = auth.generateAuthUrl({
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    scope: [
+      'https://www.googleapis.com/auth/spreadsheets.readonly',
+      'https://www.googleapis.com/auth/calendar.readonly',
+    ],
     prompt: 'consent', // force refresh_token to be returned
   })
 
@@ -265,14 +271,339 @@ function findCol(headers, ...candidates) {
 }
 
 // Normalize a person's name for matching across sheets.
-// Handles both "First Last" (Current Roster) and "Last, First" (Roster Data).
+// Converts "Last, First" → "First Last", lowercased, whitespace collapsed.
 function normalizeName(name) {
   const trimmed = name.trim()
   if (trimmed.includes(',')) {
-    const [last, first] = trimmed.split(',').map(s => s.trim())
-    return `${first} ${last}`.toLowerCase().replace(/\s+/g, ' ')
+    const [last, ...firstParts] = trimmed.split(',').map(s => s.trim())
+    return `${firstParts.join(' ')} ${last}`.toLowerCase().replace(/\s+/g, ' ').trim()
   }
   return trimmed.toLowerCase().replace(/\s+/g, ' ')
+}
+
+// --- Fuzzy name matching ---
+
+// Common nickname groups. Any token in a group matches any other token in the same group.
+const NICKNAME_GROUPS = [
+  ['timothy', 'tim', 'timmy'],
+  ['robert', 'bob', 'rob', 'robby', 'bobby'],
+  ['michael', 'mike', 'mick', 'mickey', 'mikey'],
+  ['william', 'bill', 'will', 'billy', 'willy', 'liam'],
+  ['james', 'jim', 'jimmy', 'jamie'],
+  ['joseph', 'joe', 'joey'],
+  ['thomas', 'tom', 'tommy'],
+  ['richard', 'rick', 'rich', 'dick', 'ricky'],
+  ['charles', 'chuck', 'charlie', 'chas'],
+  ['christopher', 'chris'],
+  ['anthony', 'tony'],
+  ['andrew', 'andy', 'drew'],
+  ['daniel', 'dan', 'danny'],
+  ['david', 'dave', 'davy'],
+  ['edward', 'ed', 'eddie', 'ned', 'ted'],
+  ['john', 'johnny', 'jack'],
+  ['jonathan', 'jon', 'jonny'],
+  ['kenneth', 'ken', 'kenny'],
+  ['lawrence', 'larry', 'lars'],
+  ['matthew', 'matt', 'matty'],
+  ['nicholas', 'nick', 'nicky', 'nicolas'],
+  ['patrick', 'pat', 'patty'],
+  ['peter', 'pete'],
+  ['philip', 'phil', 'phillip'],
+  ['raymond', 'ray'],
+  ['ronald', 'ron', 'ronny'],
+  ['samuel', 'sam', 'sammy'],
+  ['stephen', 'steve', 'stevie'],
+  ['steven', 'steve', 'stevie'],
+  ['walter', 'walt', 'wally'],
+  ['albert', 'al'],
+  ['alexander', 'alex', 'al', 'alec'],
+  ['alfred', 'al', 'fred'],
+  ['benjamin', 'ben', 'benny'],
+  ['donald', 'don', 'donny'],
+  ['douglas', 'doug'],
+  ['eugene', 'gene'],
+  ['franklin', 'frank'],
+  ['frederick', 'fred', 'freddie'],
+  ['gerald', 'jerry', 'gerry'],
+  ['gregory', 'greg'],
+  ['harold', 'hal', 'harry'],
+  ['leonard', 'len', 'lenny'],
+  ['martin', 'marty'],
+  ['nathan', 'nate'],
+  ['randall', 'randy'],
+  ['vincent', 'vince', 'vinnie'],
+  // Women
+  ['barbara', 'barb', 'barbie'],
+  ['catherine', 'cathy', 'cat', 'kate', 'katie', 'kat'],
+  ['katherine', 'kathy', 'kate', 'katie', 'kat'],
+  ['deborah', 'deb', 'debbie', 'debra'],
+  ['dorothy', 'dot', 'dottie'],
+  ['elizabeth', 'liz', 'beth', 'betty', 'ellie', 'lisa'],
+  ['jennifer', 'jen', 'jenny'],
+  ['jessica', 'jess', 'jessie'],
+  ['judith', 'judy'],
+  ['kathleen', 'kathy', 'kate', 'katie'],
+  ['margaret', 'maggie', 'meg', 'peggy', 'marge'],
+  ['patricia', 'pat', 'patty', 'tricia'],
+  ['stephanie', 'steph'],
+  ['susan', 'sue', 'suzy', 'susie'],
+  ['theresa', 'terri', 'teresa', 'tess'],
+  ['victoria', 'vicky', 'tori'],
+  ['manuel', 'manny'],
+  ['jacquelyn', 'jackie', 'jacky', 'jacklyn'],
+  ['nicole', 'nikki'],
+]
+
+// Build a map: token → Set of all equivalent tokens (including itself)
+function buildNicknameMap() {
+  const map = new Map()
+  for (const group of NICKNAME_GROUPS) {
+    const set = new Set(group)
+    for (const name of group) {
+      if (!map.has(name)) map.set(name, new Set(group))
+      else group.forEach(n => map.get(name).add(n))
+    }
+  }
+  return map
+}
+
+// Returns true if every token in `needles` appears in `haystack` (with nickname expansion).
+function tokensAllPresent(needles, haystack, nicknameMap) {
+  const haystackExpanded = new Set()
+  for (const t of haystack) {
+    haystackExpanded.add(t)
+    const variants = nicknameMap.get(t)
+    if (variants) variants.forEach(v => haystackExpanded.add(v))
+  }
+  return needles.every(t => {
+    if (haystackExpanded.has(t)) return true
+    const variants = nicknameMap.get(t)
+    return variants ? [...variants].some(v => haystackExpanded.has(v)) : false
+  })
+}
+
+// Remove "quoted"/[parenthesized]/aka nickname tokens for comparison
+function stripNicknames(s) {
+  return s
+    .replace(/"[^"]*"/g, ' ')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\baka\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Find a phone number for a roster name using 7 strategies in priority order.
+// Returns { phone, strategy, matchedKey, confidence } or null.
+function findPhoneMatch(rosterName, phoneMap, nicknameMap) {
+  const normalized = normalizeName(rosterName)
+
+  // Strategy 1: exact normalized match (also handles "Last, First" → "First Last")
+  if (phoneMap.has(normalized)) {
+    return { phone: phoneMap.get(normalized), strategy: 'exact', matchedKey: normalized, confidence: 100 }
+  }
+
+  const tokensA = normalized.split(' ').filter(Boolean)
+  if (tokensA.length === 0) return null
+
+  const firstA = tokensA[0]
+  const lastA  = tokensA[tokensA.length - 1]
+  const strippedA    = stripNicknames(normalized)
+  const tokensStrA   = strippedA.split(' ').filter(Boolean)
+
+  let tokenMatch        = null
+  let strippedExactMatch = null
+  let nicknameMatch     = null
+  let strippedTokenMatch = null
+  let firstFuzzyMatch   = null
+  let lastTypoMatch     = null
+
+  for (const [key, phone] of phoneMap) {
+    const tokensB = key.split(' ').filter(Boolean)
+    const firstB  = tokensB[0]
+    const lastB   = tokensB[tokensB.length - 1]
+
+    // Strategy 2: all tokens of shorter name appear exactly in longer name
+    // (handles middle names, Jr/Sr, reordering)
+    if (!tokenMatch) {
+      const [shorter, longer] = tokensA.length <= tokensB.length ? [tokensA, tokensB] : [tokensB, tokensA]
+      const longerSet = new Set(longer)
+      if (shorter.every(t => longerSet.has(t))) {
+        tokenMatch = { phone, strategy: 'token', matchedKey: key, confidence: 90 }
+      }
+    }
+
+    // Strategy 3: stripped exact match — remove "quoted"/(parenthesized)/aka tokens,
+    // then compare. Catches 'Jeffrey "JP" Echivaria' ↔ 'Echivaria, Jeffrey (JP)'.
+    if (!strippedExactMatch && strippedA) {
+      const strippedKey = stripNicknames(key)
+      if (strippedKey && strippedA === strippedKey) {
+        strippedExactMatch = { phone, strategy: 'stripped-exact', matchedKey: key, confidence: 88 }
+      }
+    }
+
+    // Strategy 4: token match with nickname expansion (Tim ↔ Timothy, Manny ↔ Manuel, etc.)
+    if (!nicknameMatch) {
+      if (tokensAllPresent(tokensA, tokensB, nicknameMap) ||
+          tokensAllPresent(tokensB, tokensA, nicknameMap)) {
+        nicknameMatch = { phone, strategy: 'nickname', matchedKey: key, confidence: 85 }
+      }
+    }
+
+    // Strategy 5: stripped token subset — after stripping nicknames, check if all tokens of
+    // the shorter side appear in the longer side. Catches 'Quyen (Quinn) Hoang' ↔ 'Hoang, Quyen N'.
+    if (!strippedTokenMatch && tokensStrA.length >= 2) {
+      const strippedKey  = stripNicknames(key)
+      const tokensStrB   = strippedKey.split(' ').filter(Boolean)
+      if (tokensStrB.length >= 1) {
+        const [shorter, longer] = tokensStrA.length <= tokensStrB.length ? [tokensStrA, tokensStrB] : [tokensStrB, tokensStrA]
+        const longerSet = new Set(longer)
+        if (shorter.every(t => longerSet.has(t))) {
+          strippedTokenMatch = { phone, strategy: 'stripped-token', matchedKey: key, confidence: 80 }
+        }
+      }
+    }
+
+    // Strategy 6: first-name fuzzy — Levenshtein ≤ 2 on first name, exact last name.
+    // Catches 'Jeffery' ↔ 'Jeffrey', 'Eric' ↔ 'Erik', 'Meserea' ↔ 'Mesere'.
+    if (!firstFuzzyMatch && tokensA.length >= 2 && tokensB.length >= 2) {
+      if (lastA === lastB) {
+        const d = levenshtein(firstA, firstB)
+        if (d >= 1 && d <= 2) {
+          firstFuzzyMatch = { phone, strategy: 'first-fuzzy', matchedKey: key, confidence: d === 1 ? 82 : 74 }
+        }
+      }
+    }
+
+    // Strategy 7: last-name typo — exact first name, Levenshtein ≤ 1 on last name.
+    // Catches 'Trujilo' ↔ 'Trujillo', 'Pickettt' ↔ 'Pickett', 'Fitzsimons' ↔ 'Fitzsimmons'.
+    if (!lastTypoMatch && tokensA.length >= 2 && tokensB.length >= 2) {
+      if (firstA === firstB && lastA !== lastB) {
+        if (levenshtein(lastA, lastB) === 1) {
+          lastTypoMatch = { phone, strategy: 'last-typo', matchedKey: key, confidence: 85 }
+        }
+      }
+    }
+
+    if (tokenMatch && strippedExactMatch && nicknameMatch && strippedTokenMatch && firstFuzzyMatch && lastTypoMatch) break
+  }
+
+  return tokenMatch || strippedExactMatch || nicknameMatch || strippedTokenMatch || firstFuzzyMatch || lastTypoMatch || null
+}
+
+// --- Skip report helpers ---
+
+// Standard Levenshtein edit distance
+function levenshtein(a, b) {
+  const m = a.length, n = b.length
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i])
+  for (let j = 1; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+// 0-100 similarity between two normalized name strings (token Dice + edit distance)
+function nameSimilarity(a, b, nicknameMap) {
+  if (a === b) return 100
+  const tokensA = a.split(' ').filter(Boolean)
+  const tokensB = b.split(' ').filter(Boolean)
+  if (!tokensA.length || !tokensB.length) return 0
+
+  // Token Dice coefficient with nickname expansion on both sides
+  const expandedB = new Set(tokensB)
+  tokensB.forEach(t => { const v = nicknameMap.get(t); if (v) v.forEach(x => expandedB.add(x)) })
+  const matchingTokens = tokensA.filter(t => {
+    if (expandedB.has(t)) return true
+    const v = nicknameMap.get(t)
+    return v ? [...v].some(x => expandedB.has(x)) : false
+  }).length
+  const dice = (2 * matchingTokens) / (tokensA.length + tokensB.length)
+
+  // Edit distance on full string (given slightly less weight)
+  const maxLen = Math.max(a.length, b.length)
+  const editSim = 1 - levenshtein(a, b) / maxLen
+
+  return Math.round(Math.max(dice, editSim * 0.85) * 100)
+}
+
+// Scan all source entries and return the closest one with its confidence score
+function findClosestInSource(rosterName, allSourceEntries, nicknameMap) {
+  const normalized = normalizeName(rosterName)
+  let best = null
+  let bestScore = -1
+  for (const entry of allSourceEntries) {
+    const score = nameSimilarity(normalized, entry.normalized, nicknameMap)
+    if (score > bestScore) { bestScore = score; best = entry }
+  }
+  return best
+    ? { ...best, confidence: bestScore }
+    : { raw: 'NOT FOUND', normalized: '', hasPhone: false, confidence: 0 }
+}
+
+function determineLikelyIssue(rosterName, closest, noPhoneSet, nicknameMap) {
+  const normalized = normalizeName(rosterName)
+
+  // Name IS in source but has no phone number
+  if (noPhoneSet.has(normalized)) return 'NO_PHONE'
+  if (closest.confidence >= 88 && !closest.hasPhone) return 'NO_PHONE'
+
+  if (closest.confidence < 40) return 'NOT_IN_ROSTER'
+
+  const tokensA = normalized.split(' ').filter(Boolean)
+  const tokensB = closest.normalized.split(' ').filter(Boolean)
+
+  // Nickname expansion explains the match
+  if (tokensAllPresent(tokensA, tokensB, nicknameMap) || tokensAllPresent(tokensB, tokensA, nicknameMap)) {
+    return 'NICKNAME'
+  }
+
+  // Typo: a mismatched token pair has small edit distance
+  const setA = new Set(tokensA), setB = new Set(tokensB)
+  const unmatchedA = tokensA.filter(t => !setB.has(t))
+  const unmatchedB = tokensB.filter(t => !setA.has(t))
+  if (unmatchedA.length > 0 && unmatchedB.length > 0) {
+    const minEdit = Math.min(...unmatchedA.flatMap(a => unmatchedB.map(b => levenshtein(a, b))))
+    if (minEdit <= 3) return 'TYPO'
+  }
+
+  if (closest.confidence >= 60) return 'NAME_FORMAT'
+  return 'NOT_IN_ROSTER'
+}
+
+function generateSuggestedFix(issue, rosterName, closest) {
+  const { raw, confidence, hasPhone } = closest
+  const noPhone = raw !== 'NOT FOUND' && !hasPhone ? ' (note: that Roster Data entry also has no phone)' : ''
+
+  switch (issue) {
+    case 'NO_PHONE':
+      return raw !== 'NOT FOUND'
+        ? `Found in Roster Data as "${raw}" but no phone number on file — staff need to add their phone number`
+        : `No phone number anywhere in the sheet — staff need to add this member to Roster Data with a phone number`
+    case 'TYPO':
+      return `Likely spelling error — roster has "${rosterName}", Roster Data has "${raw}"${noPhone} — fix the spelling in whichever sheet has the error`
+    case 'NICKNAME':
+      return `Nickname mismatch — roster has "${rosterName}", Roster Data has "${raw}"${noPhone} — standardize to one form in both sheets`
+    case 'NAME_FORMAT':
+      return `Name format differs — roster has "${rosterName}", closest in Roster Data is "${raw}" (${confidence}% match)${noPhone} — verify they are the same person and align the names`
+    case 'NOT_IN_ROSTER':
+      return raw !== 'NOT FOUND'
+        ? `Not found in Roster Data (best guess "${raw}" at only ${confidence}%) — staff need to add this member with their phone number`
+        : `Not found anywhere in Roster Data — staff need to add this member with their phone number`
+    default:
+      return 'Unknown issue — manual review needed'
+  }
+}
+
+// Write rows as a properly quoted CSV string
+function toCsv(rows) {
+  return rows.map(row =>
+    row.map(f => `"${String(f ?? '').replace(/"/g, '""')}"`).join(',')
+  ).join('\n')
 }
 
 // --- Discover mode: print tab names + first 3 rows of each, no writes ---
@@ -394,8 +725,10 @@ async function runReal() {
   // --- Build phone map from phone source tab ---
   // Names in Roster Data are "Last, First"; Current Roster uses "First Last".
   // normalizeName() converts both to "first last" for matching.
-  const phoneMap = new Map()    // normalizedName → phone (10-digit string)
+  const phoneMap = new Map()          // normalizedName → phone (10-digit string)
   const circleLabelByName = new Map() // normalizedName → circle label
+  const allSourceEntries = []         // { raw, normalized, hasPhone } — for skip report
+  const noPhoneSet = new Set()        // normalized names that exist but have no valid phone
 
   const { headers: phoneHeaders, rows: phoneRows } = await readTab(sheets, GOOGLE_SHEET_ID, phoneSourceTab)
   console.log(`\nPhone source headers: ${phoneHeaders.join(' | ')}`)
@@ -408,12 +741,17 @@ async function runReal() {
 
   let phoneMissing = 0
   for (const row of phoneRows) {
-    const name  = row[phoneNameCol] || ''
-    const phone = normalizePhone(row[phoneNumCol] || '')
+    const name   = row[phoneNameCol] || ''
+    const phone  = normalizePhone(row[phoneNumCol] || '')
     const circle = row[phoneCircCol] || ''
     if (!name) continue
-    if (!phone || phone === '0000000000') { phoneMissing++; continue }
+
     const key = normalizeName(name)
+    const hasPhone = phone.length === 10 && phone !== '0000000000'
+
+    allSourceEntries.push({ raw: name, normalized: key, hasPhone })
+
+    if (!hasPhone) { phoneMissing++; noPhoneSet.add(key); continue }
     phoneMap.set(key, phone)
     if (circle) circleLabelByName.set(key, circle)
   }
@@ -444,25 +782,32 @@ async function runReal() {
 
   // --- Upsert members ---
   let membersUpserted = 0, membersSkipped = 0, attendanceUpserted = 0, attendanceErrors = 0
-  const memberIdByKey = new Map()
+  const memberIdByName = new Map()  // raw roster name → supabase member id
+  const skippedMembers = []         // raw roster names that had no phone match (for skip report)
+  const nicknameMap = buildNicknameMap()
 
   console.log('\n--- Upserting members ---')
 
   for (const row of mainRows) {
     const name = row[nameCol] || ''
-    if (!name) continue
+    if (!name || /^\d+$/.test(name)) continue  // skip blank and pure-number rows
 
-    const nameKey = normalizeName(name)
-    const phone   = phoneMap.get(nameKey) || ''
+    const phoneMatch = findPhoneMatch(name, phoneMap, nicknameMap)
 
-    if (!phone) {
-      console.warn(`[member] no phone for "${name}" (looked up as "${nameKey}") — skipping`)
+    if (!phoneMatch) {
+      console.warn(`[member] no phone for "${name}" — skipping`)
+      skippedMembers.push(name)
       membersSkipped++
       continue
     }
 
+    const { phone, strategy, matchedKey, confidence } = phoneMatch
+    if (strategy !== 'exact') {
+      console.log(`[match] "${name}" → "${matchedKey}" via ${strategy} (${confidence}%)`)
+    }
+
     const clientId    = rowCol !== null ? (row[rowCol] || '') : ''
-    const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(nameKey) || ''
+    const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(matchedKey) || ''
     const choresDone  = Math.max(0, parseInt(choresCol ? row[choresCol] || '0' : '0', 10) || 0)
     const parsed      = parseCircleLabel(circleLabel)
 
@@ -491,7 +836,7 @@ async function runReal() {
         .single()
 
       if (error) throw error
-      memberIdByKey.set(nameKey, data.id)
+      memberIdByName.set(name, data.id)
       membersUpserted++
       console.log(`[member] ✓ ${name} | ${phone} | chores: ${choresDone}`)
     } catch (err) {
@@ -510,7 +855,7 @@ async function runReal() {
   for (const row of mainRows) {
     const name = row[nameCol] || ''
     if (!name) continue
-    const memberId = memberIdByKey.get(normalizeName(name))
+    const memberId = memberIdByName.get(name)
     if (!memberId) continue
 
     const records = []
@@ -541,6 +886,41 @@ async function runReal() {
   console.log('\n=== Summary ===')
   console.log(`Members:    ${membersUpserted} upserted, ${membersSkipped} skipped (no phone match)`)
   console.log(`Attendance: ${attendanceUpserted} upserted, ${attendanceErrors} errors`)
+
+  // --- Generate skip report CSV ---
+  if (skippedMembers.length > 0) {
+    console.log(`\nGenerating skip report for ${skippedMembers.length} unmatched members...`)
+
+    const csvRows = [
+      ['name_in_roster', 'closest_match_found', 'match_confidence', 'likely_issue', 'suggested_fix'],
+    ]
+
+    for (const name of skippedMembers) {
+      const closest = findClosestInSource(name, allSourceEntries, nicknameMap)
+      const issue   = determineLikelyIssue(name, closest, noPhoneSet, nicknameMap)
+      const fix     = generateSuggestedFix(issue, name, closest)
+
+      csvRows.push([
+        name,
+        closest.raw,
+        `${closest.confidence}%`,
+        issue,
+        fix,
+      ])
+    }
+
+    let reportPath = join(__dirname, '..', 'skip-report.csv')
+    try {
+      writeFileSync(reportPath, toCsv(csvRows), 'utf-8')
+    } catch (e) {
+      if (e.code === 'EBUSY') {
+        reportPath = join(__dirname, '..', `skip-report-${Date.now()}.csv`)
+        writeFileSync(reportPath, toCsv(csvRows), 'utf-8')
+        console.log('(skip-report.csv was locked — wrote to alternate file)')
+      } else throw e
+    }
+    console.log(`Skip report saved to: ${reportPath}`)
+  }
 }
 
 // --- Entry point ---

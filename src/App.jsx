@@ -10,9 +10,21 @@ import Chores from './pages/Chores.jsx'
 import Profile from './pages/Profile.jsx'
 import { colors } from './theme.js'
 
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000 // 30 days in ms
+
 function RequireAuth({ children }) {
   const memberId = localStorage.getItem('memberId')
-  if (!memberId) return <Navigate to="/login" replace />
+  const loginAt  = parseInt(localStorage.getItem('loginAt') || '0', 10)
+
+  // loginAt === 0 means an old session with no timestamp stored — treat as valid
+  // so existing users aren't force-logged-out on the first deploy.
+  const expired = loginAt > 0 && (Date.now() - loginAt) > SESSION_TTL
+
+  if (!memberId || expired) {
+    localStorage.removeItem('memberId')
+    localStorage.removeItem('loginAt')
+    return <Navigate to="/login" replace />
+  }
   return children
 }
 
@@ -26,7 +38,7 @@ function AppShell() {
       {!isLogin && <Header memberName={member?.full_name} />}
       <main
         style={{
-          paddingTop: isLogin ? 0 : 88,
+          paddingTop: isLogin ? 0 : 104,
           paddingBottom: isLogin ? 0 : 60,
           background: colors.background,
           minHeight: '100dvh',

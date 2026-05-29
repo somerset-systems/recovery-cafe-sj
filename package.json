@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:netlify": "netlify dev",
+    "dev:api": "node api/_dev.js",
     "build": "vite build",
     "preview": "vite preview"
   },

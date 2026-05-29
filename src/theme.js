@@ -4,15 +4,15 @@ export const colors = {
   background: '#F8F4EF',
   card: '#FFFFFF',
 
-  tagClass: '#2D6A4F',
-  tagWorkshop: '#7F4F24',
+  tagEvent: '#2D6A4F',
+  tagClass: '#2A7F7F',
   tagMusic: '#6B4F8C',
-  tagSpecial: '#C1440E',
+  tagSchool: '#1E3A5F',
 
-  tagClassBg: '#E3F2EC',
-  tagWorkshopBg: '#F5ECE0',
+  tagEventBg: '#E3F2EC',
+  tagClassBg: '#E0F2F2',
   tagMusicBg: '#EDE5F5',
-  tagSpecialBg: '#FAE9E0',
+  tagSchoolBg: '#E4EBF5',
 
   textDark: '#1A1A1A',
   textMedium: '#555555',

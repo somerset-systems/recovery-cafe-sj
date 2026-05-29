@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMember } from '../hooks/useMember.js'
 import { db } from '../lib/supabase.js'
+import { fetchCircleLocation } from '../lib/googleCalendar.js'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import { colors, fontSize } from '../theme.js'
@@ -12,6 +13,11 @@ const STATUS_CONFIG = {
   not_enrolled:{ label: 'Not yet',  bg: colors.chipNotYet,   text: colors.white },
 }
 
+// Only show history from this date forward (no records before the program started tracking)
+const HISTORY_START = '2025-12-01'
+// Max weeks shown before "View more" is offered
+const MAX_WEEKS = 12
+
 function formatWeekDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -21,7 +27,9 @@ export default function Circle() {
   const { member, loading: memberLoading, error: memberError } = useMember()
   const [attendance, setAttendance] = useState([])
   const [attLoading, setAttLoading] = useState(true)
-  const [attError, setAttError] = useState(null)
+  const [attError, setAttError]     = useState(null)
+  const [showAll, setShowAll]       = useState(false)
+  const [location, setLocation]     = useState(null)
 
   useEffect(() => {
     if (!member) return
@@ -32,9 +40,27 @@ export default function Circle() {
     })
   }, [member])
 
+  // Silently fetch circle location from Google Calendar — no error shown if unavailable
+  useEffect(() => {
+    if (!member?.circle_leader) return
+    fetchCircleLocation(member.circle_leader).then(loc => {
+      if (loc) setLocation(loc)
+    })
+  }, [member?.circle_leader])
+
   if (memberLoading) return <Loading />
   if (memberError) return <Err message={memberError} />
   if (!member) return <Err message="Could not load your profile." />
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Filter to Dec 1 2025 → today, most recent first
+  const history = attendance
+    .filter(r => r.week_date >= HISTORY_START && r.week_date <= today)
+    .sort((a, b) => b.week_date.localeCompare(a.week_date))
+
+  const hasMore = history.length > MAX_WEEKS
+  const displayed = showAll ? history : history.slice(0, MAX_WEEKS)
 
   return (
     <div
@@ -57,14 +83,19 @@ export default function Circle() {
         <p style={{ margin: '0 0 2px 0', fontSize: fontSize.medium, color: colors.textMedium }}>
           {member.circle_time}
         </p>
+        {location && (
+          <p style={{ margin: '0 0 2px 0', fontSize: fontSize.body, color: colors.textMedium }}>
+            📍 {location}
+          </p>
+        )}
         <p style={{ margin: 0, fontSize: fontSize.body, color: colors.textMedium }}>
           Led by {member.circle_leader}
         </p>
       </Card>
 
-      {/* Attendance */}
+      {/* Attendance history */}
       <Card>
-        <SectionLabel label="This Month" />
+        <SectionLabel label="Your Attendance History" />
 
         {attLoading && (
           <p style={{ margin: 0, color: colors.textMedium, fontSize: fontSize.body }}>Loading…</p>
@@ -74,43 +105,69 @@ export default function Circle() {
           <p style={{ margin: 0, color: colors.danger, fontSize: fontSize.body }}>{attError}</p>
         )}
 
-        {!attLoading && !attError && attendance.length === 0 && (
-          <p style={{ margin: 0, color: colors.textMedium, fontSize: fontSize.body }}>No attendance records yet this month.</p>
+        {!attLoading && !attError && history.length === 0 && (
+          <p style={{ margin: 0, color: colors.textMedium, fontSize: fontSize.body }}>
+            No attendance records on file yet.
+          </p>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {attendance.map((record) => {
-            const cfg = STATUS_CONFIG[record.status] || STATUS_CONFIG.not_enrolled
-            return (
-              <div
-                key={record.id}
+        {!attLoading && !attError && history.length > 0 && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {displayed.map((record) => {
+                const cfg = STATUS_CONFIG[record.status] || STATUS_CONFIG.not_enrolled
+                return (
+                  <div
+                    key={record.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: fontSize.body, color: colors.textMedium }}>
+                      Week of {formatWeekDate(record.week_date)}
+                    </span>
+                    <span
+                      style={{
+                        background: cfg.bg,
+                        color: cfg.text,
+                        borderRadius: 20,
+                        padding: '5px 16px',
+                        fontSize: fontSize.small,
+                        fontWeight: 600,
+                        minWidth: 78,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {cfg.label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            {hasMore && !showAll && (
+              <button
+                onClick={() => setShowAll(true)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  marginTop: 16,
+                  width: '100%',
+                  height: 44,
+                  borderRadius: 10,
+                  border: `1.5px solid ${colors.border}`,
+                  background: 'transparent',
+                  color: colors.primaryGreen,
+                  fontSize: fontSize.body,
+                  fontWeight: 600,
+                  cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: fontSize.body, color: colors.textMedium }}>
-                  Week of {formatWeekDate(record.week_date)}
-                </span>
-                <span
-                  style={{
-                    background: cfg.bg,
-                    color: cfg.text,
-                    borderRadius: 20,
-                    padding: '5px 16px',
-                    fontSize: fontSize.small,
-                    fontWeight: 600,
-                    minWidth: 78,
-                    textAlign: 'center',
-                  }}
-                >
-                  {cfg.label}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+                View more ({history.length - MAX_WEEKS} older weeks)
+              </button>
+            )}
+          </>
+        )}
       </Card>
     </div>
   )

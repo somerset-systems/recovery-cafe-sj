@@ -7,20 +7,25 @@ export function useMember() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    const memberId = localStorage.getItem('memberId')
-    if (!memberId) {
-      setLoading(false)
-      return
+    function fetchMember() {
+      const memberId = localStorage.getItem('memberId')
+      if (!memberId) {
+        setLoading(false)
+        return
+      }
+      db.getMemberById(memberId).then(({ data, error: err }) => {
+        if (err) {
+          setError(err.message || 'Failed to load member data.')
+        } else {
+          setMember(data)
+        }
+        setLoading(false)
+      })
     }
 
-    db.getMemberById(memberId).then(({ data, error: err }) => {
-      if (err) {
-        setError(err.message || 'Failed to load member data.')
-      } else {
-        setMember(data)
-      }
-      setLoading(false)
-    })
+    fetchMember()
+    window.addEventListener('memberLogin', fetchMember)
+    return () => window.removeEventListener('memberLogin', fetchMember)
   }, [])
 
   return { member, loading, error }
