@@ -16,6 +16,19 @@ const HEADERS = {
 }
 
 export const handler = async () => {
+  // ── Env diagnostics (safe — never logs actual secret values) ─────────────
+  console.log('[events] env check:', {
+    GOOGLE_CLIENT_ID:     !!process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: !!process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_TOKEN_JSON:    !!process.env.GOOGLE_TOKEN_JSON,
+    GOOGLE_TOKEN_preview: process.env.GOOGLE_TOKEN_JSON
+      ? process.env.GOOGLE_TOKEN_JSON.slice(0, 20)
+      : '(not set)',
+    CALENDAR_PROGRAMS:    process.env.CALENDAR_PROGRAMS || process.env.VITE_CALENDAR_PROGRAMS || '(not set)',
+    CALENDAR_SCHOOL:      process.env.CALENDAR_SCHOOL   || process.env.VITE_CALENDAR_SCHOOL   || '(not set)',
+    CALENDAR_CIRCLES:     process.env.CALENDAR_CIRCLES  || process.env.VITE_CALENDAR_CIRCLES  || '(not set)',
+  })
+
   try {
     const programsId = calendarId('PROGRAMS')
     const schoolId   = calendarId('SCHOOL')
