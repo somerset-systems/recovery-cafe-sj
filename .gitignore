@@ -7,3 +7,10 @@ google-credentials.json.json
 
 # Local Netlify folder
 .netlify
+
+# Sensitive reports (contain real member names)
+skip-report*.csv
+
+# Temporary screenshots
+screenshot-*.png
+screenshots/
