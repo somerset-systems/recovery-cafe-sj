@@ -1,13 +1,13 @@
 // netlify/functions/events.js
 // GET /api/events  (redirected via netlify.toml)
 
-import { fetchCalendarEvents, calendarId } from './_calendar.js'
+const { fetchCalendarEvents, calendarId } = require('./_calendar.js')
 
 const STAFF_KEYWORDS = ['staff', 'meeting', 'board', 'admin', 'volunteer training']
 
 function isStaffEvent(title) {
   const t = (title || '').toLowerCase()
-  return STAFF_KEYWORDS.some(kw => t.includes(kw))
+  return STAFF_KEYWORDS.some(function(kw) { return t.includes(kw) })
 }
 
 const HEADERS = {
@@ -15,8 +15,7 @@ const HEADERS = {
   'Content-Type': 'application/json',
 }
 
-export const handler = async () => {
-  // ── Env diagnostics (safe — never logs actual secret values) ─────────────
+exports.handler = async function() {
   console.log('[events] env check:', {
     GOOGLE_OAUTH_CLIENT_ID:     !!process.env.GOOGLE_OAUTH_CLIENT_ID,
     GOOGLE_OAUTH_CLIENT_SECRET: !!process.env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -24,9 +23,9 @@ export const handler = async () => {
     GOOGLE_TOKEN_preview: process.env.GOOGLE_TOKEN_JSON
       ? process.env.GOOGLE_TOKEN_JSON.slice(0, 20)
       : '(not set)',
-    CALENDAR_PROGRAMS:    process.env.CALENDAR_PROGRAMS || process.env.VITE_CALENDAR_PROGRAMS || '(not set)',
-    CALENDAR_SCHOOL:      process.env.CALENDAR_SCHOOL   || process.env.VITE_CALENDAR_SCHOOL   || '(not set)',
-    CALENDAR_CIRCLES:     process.env.CALENDAR_CIRCLES  || process.env.VITE_CALENDAR_CIRCLES  || '(not set)',
+    CALENDAR_PROGRAMS: process.env.CALENDAR_PROGRAMS || process.env.VITE_CALENDAR_PROGRAMS || '(not set)',
+    CALENDAR_SCHOOL:   process.env.CALENDAR_SCHOOL   || process.env.VITE_CALENDAR_SCHOOL   || '(not set)',
+    CALENDAR_CIRCLES:  process.env.CALENDAR_CIRCLES  || process.env.VITE_CALENDAR_CIRCLES  || '(not set)',
   })
 
   try {
@@ -54,20 +53,14 @@ export const handler = async () => {
         events.push(...result.value)
       } else {
         const name = i === 0 ? 'Programs' : 'School for Recovery'
-        warnings.push(`${name} calendar failed: ${result.reason?.message || result.reason}`)
-        console.error(`[events] ${name} calendar error:`, result.reason)
+        warnings.push(name + ' calendar failed: ' + (result.reason && result.reason.message || result.reason))
+        console.error('[events] ' + name + ' calendar error:', result.reason)
       }
     }
 
-    const filtered = events.filter(e => !isStaffEvent(e.title))
-    filtered.sort((a, b) => a._ms - b._ms)
-
-    for (const e of filtered) {
-      const mins = Math.round((e._ms % 86400000) / 60000)
-      console.log(`[sort] ${e.event_date} ${String(e.event_time).padEnd(10)} (${mins} min) — ${e.title}`)
-    }
-
-    for (const e of filtered) delete e._ms
+    const filtered = events.filter(function(e) { return !isStaffEvent(e.title) })
+    filtered.sort(function(a, b) { return a._ms - b._ms })
+    filtered.forEach(function(e) { delete e._ms })
 
     return {
       statusCode: 200,

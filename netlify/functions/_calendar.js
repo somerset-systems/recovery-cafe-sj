@@ -1,19 +1,14 @@
-// netlify/functions/_calendar.js — shared Google Calendar helper for Netlify functions.
+// netlify/functions/_calendar.js — shared Google Calendar helper (CommonJS).
 // Prefixed with _ so Netlify does not expose it as a function endpoint.
 //
-// This is a copy of api/_calendar.js with one change: import.meta.url (ESM-only) is
-// replaced with process.cwd() because Netlify's esbuild bundles functions to CJS format,
-// which makes import.meta.url undefined at runtime.
-//
 // Credential loading order:
-//   1. Env vars  GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET + GOOGLE_TOKEN_JSON  (Netlify prod)
-//   2. Files     google-credentials.json + .google-token.json                   (local dev)
+//   1. Env vars  GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET + GOOGLE_TOKEN_JSON  (Netlify prod)
+//   2. Files     google-credentials.json + .google-token.json                              (local dev)
 
-import { google } from 'googleapis'
-import { readFileSync, existsSync } from 'fs'
-import { join } from 'path'
+const { google } = require('googleapis')
+const { readFileSync, existsSync } = require('fs')
+const { join } = require('path')
 
-// process.cwd() is the project root in both `netlify dev` and production Lambda context.
 const ROOT = process.cwd()
 
 // ── Credential / token loading ────────────────────────────────────────────────
@@ -31,14 +26,18 @@ function getClientSecrets() {
     }
   }
   throw new Error(
-    'Google credentials not found. Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET env vars, ' +
+    'Google credentials not found. Set GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET env vars, ' +
     'or place google-credentials.json in the project root.'
   )
 }
 
 function getToken() {
   if (process.env.GOOGLE_TOKEN_JSON) {
-    return JSON.parse(process.env.GOOGLE_TOKEN_JSON)
+    try {
+      return JSON.parse(process.env.GOOGLE_TOKEN_JSON)
+    } catch (e) {
+      throw new Error(`GOOGLE_TOKEN_JSON is set but not valid JSON: ${e.message}`)
+    }
   }
   const p = join(ROOT, '.google-token.json')
   if (existsSync(p)) return JSON.parse(readFileSync(p, 'utf-8'))
@@ -48,6 +47,7 @@ function getToken() {
   )
 }
 
+// Checks CALENDAR_* first, then VITE_CALENDAR_* (Netlify exposes all dashboard vars to functions).
 function calendarId(name) {
   return process.env[`CALENDAR_${name}`] || process.env[`VITE_CALENDAR_${name}`] || null
 }
@@ -77,13 +77,13 @@ function formatTime(dateTimeStr) {
 }
 
 function parseItem(item, tag) {
-  const startRaw = item.start?.dateTime || item.start?.date
+  const startRaw = item.start && (item.start.dateTime || item.start.date)
   const d = new Date(startRaw)
   return {
     id:         item.id,
     title:      item.summary || 'Event',
     event_date: d.toISOString().slice(0, 10),
-    event_time: item.start?.dateTime ? formatTime(item.start.dateTime) : null,
+    event_time: item.start && item.start.dateTime ? formatTime(item.start.dateTime) : null,
     _ms:        d.getTime(),
     location:   item.location || null,
     tag,
@@ -92,7 +92,9 @@ function parseItem(item, tag) {
 
 // ── Public helpers ────────────────────────────────────────────────────────────
 
-export async function fetchCalendarEvents(calId, tag, { daysAhead = 30, maxResults = 100 } = {}) {
+async function fetchCalendarEvents(calId, tag, options) {
+  const daysAhead  = (options && options.daysAhead)  || 30
+  const maxResults = (options && options.maxResults) || 100
   const cal = createClient()
   const now = new Date()
   const max = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000)
@@ -104,10 +106,12 @@ export async function fetchCalendarEvents(calId, tag, { daysAhead = 30, maxResul
     orderBy:      'startTime',
     maxResults:   String(maxResults),
   })
-  return (res.data.items || []).map(item => parseItem(item, tag === 'auto' ? inferTag(item.summary) : tag))
+  return (res.data.items || []).map(function(item) {
+    return parseItem(item, tag === 'auto' ? inferTag(item.summary) : tag)
+  })
 }
 
-export async function findCircleLocation(leaderName) {
+async function findCircleLocation(leaderName) {
   const calId = calendarId('CIRCLES')
   if (!calId) return null
   const cal = createClient()
@@ -124,15 +128,15 @@ export async function findCircleLocation(leaderName) {
   const keyword = leaderName
     .replace(/\./g, '')
     .split(/\s+/)
-    .filter(w => w.length >= 3)
-    .sort((a, b) => b.length - a.length)[0]
-    ?.toLowerCase()
+    .filter(function(w) { return w.length >= 3 })
+    .sort(function(a, b) { return b.length - a.length })[0]
   if (!keyword) return null
-  const match = (res.data.items || []).find(item => {
-    const haystack = `${item.summary || ''} ${item.description || ''}`.toLowerCase()
-    return haystack.includes(keyword)
+  const kw = keyword.toLowerCase()
+  const match = (res.data.items || []).find(function(item) {
+    const haystack = ((item.summary || '') + ' ' + (item.description || '')).toLowerCase()
+    return haystack.includes(kw)
   })
-  return match?.location || null
+  return (match && match.location) || null
 }
 
-export { calendarId }
+module.exports = { fetchCalendarEvents, findCircleLocation, calendarId }
