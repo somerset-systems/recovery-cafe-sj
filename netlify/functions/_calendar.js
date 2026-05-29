@@ -19,8 +19,8 @@ const ROOT = process.cwd()
 // ── Credential / token loading ────────────────────────────────────────────────
 
 function getClientSecrets() {
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    return { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET }
+  if (process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET) {
+    return { clientId: process.env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET }
   }
   for (const name of ['google-credentials.json', 'google-credentials.json.json']) {
     const p = join(ROOT, name)

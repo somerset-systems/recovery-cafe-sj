@@ -18,9 +18,9 @@ const HEADERS = {
 export const handler = async () => {
   // ── Env diagnostics (safe — never logs actual secret values) ─────────────
   console.log('[events] env check:', {
-    GOOGLE_CLIENT_ID:     !!process.env.GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: !!process.env.GOOGLE_CLIENT_SECRET,
-    GOOGLE_TOKEN_JSON:    !!process.env.GOOGLE_TOKEN_JSON,
+    GOOGLE_OAUTH_CLIENT_ID:     !!process.env.GOOGLE_OAUTH_CLIENT_ID,
+    GOOGLE_OAUTH_CLIENT_SECRET: !!process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    GOOGLE_TOKEN_JSON:          !!process.env.GOOGLE_TOKEN_JSON,
     GOOGLE_TOKEN_preview: process.env.GOOGLE_TOKEN_JSON
       ? process.env.GOOGLE_TOKEN_JSON.slice(0, 20)
       : '(not set)',
