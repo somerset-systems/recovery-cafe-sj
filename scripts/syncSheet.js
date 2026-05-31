@@ -757,6 +757,36 @@ async function runReal() {
   }
   console.log(`Loaded ${phoneMap.size} phone records (${phoneMissing} rows had no valid number).`)
 
+  // --- Load Agency Data tab for real client IDs + phone fallback ---
+  // findPhoneMatch works on any Map<normalizedName, string> — here we reuse it for non-phone values.
+  const agencyClientIdMap = new Map()  // normalizedName → agency client_id string
+  const agencyPhoneMap    = new Map()  // normalizedName → phone (10-digit), used when Roster Data has no number
+
+  const agencyTabName = tabs.find(t => t === 'Agency Data') ?? null
+  if (agencyTabName) {
+    const { headers: agHeaders, rows: agRows } = await readTab(sheets, GOOGLE_SHEET_ID, agencyTabName)
+    console.log(`\nAgency Data tab: "${agencyTabName}"`)
+    console.log(`  headers: ${agHeaders.join(' | ')}`)
+
+    const agIdCol    = findCol(agHeaders, 'Client ID', 'ClientID', 'Agency ID', 'ID')
+    const agNameCol  = findCol(agHeaders, 'Client Name', 'Full Name', 'Name')
+    const agPhoneCol = findCol(agHeaders, 'Client Number', 'Number', 'Phone', 'Cell')
+    console.log(`  → id: "${agIdCol}"  name: "${agNameCol}"  phone: "${agPhoneCol}"`)
+
+    for (const row of agRows) {
+      const name = agNameCol ? (row[agNameCol] || '') : ''
+      if (!name) continue
+      const clientId = agIdCol    ? (row[agIdCol]    || '') : ''
+      const phone    = normalizePhone(agPhoneCol ? (row[agPhoneCol] || '') : '')
+      const key      = normalizeName(name)
+      if (clientId) agencyClientIdMap.set(key, clientId)
+      if (phone.length === 10 && phone !== '0000000000') agencyPhoneMap.set(key, phone)
+    }
+    console.log(`  Loaded ${agencyClientIdMap.size} client IDs, ${agencyPhoneMap.size} phones from Agency Data`)
+  } else {
+    console.warn('Agency Data tab not found — client_ids will fall back to row numbers')
+  }
+
   // --- Read main roster ---
   const { headers: mainHeaders, rows: mainRows } = await readTab(sheets, GOOGLE_SHEET_ID, mainRosterTab)
   console.log(`\nMain roster headers: ${mainHeaders.join(' | ')}`)
@@ -782,6 +812,7 @@ async function runReal() {
 
   // --- Upsert members ---
   let membersUpserted = 0, membersSkipped = 0, attendanceUpserted = 0, attendanceErrors = 0
+  let clientIdsFound = 0, phonesFromAgency = 0
   const memberIdByName = new Map()  // raw roster name → supabase member id
   const skippedMembers = []         // raw roster names that had no phone match (for skip report)
   const nicknameMap = buildNicknameMap()
@@ -792,21 +823,39 @@ async function runReal() {
     const name = row[nameCol] || ''
     if (!name || /^\d+$/.test(name)) continue  // skip blank and pure-number rows
 
-    const phoneMatch = findPhoneMatch(name, phoneMap, nicknameMap)
+    // Phone: Roster Data first, Agency Data as fallback
+    let phone = null
+    const rosterMatch = findPhoneMatch(name, phoneMap, nicknameMap)
+    if (rosterMatch) {
+      phone = rosterMatch.phone
+      if (rosterMatch.strategy !== 'exact') {
+        console.log(`[match] "${name}" → "${rosterMatch.matchedKey}" via ${rosterMatch.strategy} (${rosterMatch.confidence}%)`)
+      }
+    } else if (agencyPhoneMap.size > 0) {
+      const agPhoneMatch = findPhoneMatch(name, agencyPhoneMap, nicknameMap)
+      if (agPhoneMatch) {
+        phone = agPhoneMatch.phone
+        phonesFromAgency++
+        console.log(`[agency-phone] "${name}" → phone from Agency Data (${agPhoneMatch.strategy}, ${agPhoneMatch.confidence}%)`)
+      }
+    }
 
-    if (!phoneMatch) {
+    if (!phone) {
       console.warn(`[member] no phone for "${name}" — skipping`)
       skippedMembers.push(name)
       membersSkipped++
       continue
     }
 
-    const { phone, strategy, matchedKey, confidence } = phoneMatch
-    if (strategy !== 'exact') {
-      console.log(`[match] "${name}" → "${matchedKey}" via ${strategy} (${confidence}%)`)
+    // Client ID: prefer real Agency Data ID over row number
+    let clientId = rowCol !== null ? (row[rowCol] || '') : ''
+    if (agencyClientIdMap.size > 0) {
+      const agIdMatch = findPhoneMatch(name, agencyClientIdMap, nicknameMap)
+      if (agIdMatch) {
+        clientId = agIdMatch.phone  // findPhoneMatch returns map value in .phone field
+        clientIdsFound++
+      }
     }
-
-    const clientId    = rowCol !== null ? (row[rowCol] || '') : ''
     const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(matchedKey) || ''
     const choresDone  = Math.max(0, parseInt(choresCol ? row[choresCol] || '0' : '0', 10) || 0)
     const parsed      = parseCircleLabel(circleLabel)
@@ -884,8 +933,10 @@ async function runReal() {
   }
 
   console.log('\n=== Summary ===')
-  console.log(`Members:    ${membersUpserted} upserted, ${membersSkipped} skipped (no phone match)`)
-  console.log(`Attendance: ${attendanceUpserted} upserted, ${attendanceErrors} errors`)
+  console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone match)`)
+  console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceErrors} errors`)
+  console.log(`Client IDs updated:  ${clientIdsFound} from Agency Data${clientIdsFound < membersUpserted ? ` (${membersUpserted - clientIdsFound} fell back to row number)` : ''}`)
+  console.log(`Phones from Agency:  ${phonesFromAgency} members got phone from Agency Data (not in Roster Data)`)
 
   // --- Generate skip report CSV ---
   if (skippedMembers.length > 0) {
