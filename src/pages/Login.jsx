@@ -60,12 +60,6 @@ export default function Login() {
     return () => clearTimeout(t)
   }, [lockedOut])
 
-  // Auto-fill code with "123456" when entering code phase (Twilio placeholder)
-  useEffect(() => {
-    if (phase !== 'code') return
-    setCode(['1', '2', '3', '4', '5', '6'])
-  }, [phase])
-
   // ── Phone screen handlers ──────────────────────────────────────────────────
 
   function handlePhoneChange(e) {
@@ -86,15 +80,31 @@ export default function Login() {
     setLoading(true)
     setErrorMsg('')
     const { data: member, error } = await db.getMemberByPhone(normalized)
-    setLoading(false)
 
     if (error || !member) {
+      setLoading(false)
       recordFailedAttempt()
       if (lockoutRemaining() > 0) setLockedOut(true)
       setErrorMsg("We couldn't find your number. Ask a staff member for help.")
       return
     }
 
+    // Send SMS verification code
+    try {
+      const res  = await fetch('/api/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Send failed')
+    } catch (sendErr) {
+      setLoading(false)
+      setErrorMsg('Could not send verification code. Please try again.')
+      return
+    }
+
+    setLoading(false)
     clearAttempts()
     setPendingMember(member)
     setPhase('code')
@@ -136,8 +146,22 @@ export default function Login() {
       return
     }
 
-    // Twilio not yet connected — placeholder accepts "123456"
-    if (entered !== '123456') {
+    setLoading(true)
+    setErrorMsg('')
+
+    try {
+      const normalized = normalizePhone(phone)
+      const res  = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized, code: entered }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Verification failed')
+    } catch {
+      setLoading(false)
+      recordFailedAttempt()
+      if (lockoutRemaining() > 0) { setLockedOut(true); return }
       setErrorMsg('Incorrect code. Please try again.')
       return
     }
@@ -189,27 +213,9 @@ export default function Login() {
         <Logo visible={logoVisible} onError={() => setLogoVisible(false)} />
 
         <h1 style={styles.heading}>Enter your code</h1>
-        <p style={{ ...styles.sub, marginBottom: 12 }}>
+        <p style={{ ...styles.sub, marginBottom: 32 }}>
           We sent a 6-digit code to {displayPhone(phone)}.
         </p>
-
-        {/* Remove this banner when Twilio is connected */}
-        <div
-          style={{
-            background: '#EFF8F2',
-            border: `1px solid ${colors.accentGreen}`,
-            borderRadius: 10,
-            padding: '10px 16px',
-            maxWidth: 340,
-            width: '100%',
-            marginBottom: 24,
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ margin: 0, fontSize: fontSize.small, color: colors.primaryGreen, fontWeight: 600 }}>
-            SMS verification coming soon — code is auto-filled for now
-          </p>
-        </div>
 
         <form
           onSubmit={handleCodeSubmit}
