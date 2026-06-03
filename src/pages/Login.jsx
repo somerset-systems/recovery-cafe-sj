@@ -5,6 +5,9 @@ import { colors, fontSize } from '../theme.js'
 
 const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_logo.png'
 
+// Set to true once Twilio compliance is approved and credentials are in Netlify.
+const SMS_ENABLED = false
+
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const RATE_KEY     = 'loginAttempts'
 const LOCKOUT_KEY  = 'loginLockoutUntil'
@@ -60,6 +63,12 @@ export default function Login() {
     return () => clearTimeout(t)
   }, [lockedOut])
 
+  // Auto-fill 123456 while SMS is disabled so staff can log in immediately
+  useEffect(() => {
+    if (phase !== 'code' || SMS_ENABLED) return
+    setCode(['1', '2', '3', '4', '5', '6'])
+  }, [phase])
+
   // ── Phone screen handlers ──────────────────────────────────────────────────
 
   function handlePhoneChange(e) {
@@ -89,19 +98,21 @@ export default function Login() {
       return
     }
 
-    // Send SMS verification code
-    try {
-      const res  = await fetch('/api/send-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalized }),
-      })
-      const json = await res.json()
-      if (!res.ok || json.error) throw new Error(json.error || 'Send failed')
-    } catch (sendErr) {
-      setLoading(false)
-      setErrorMsg('Could not send verification code. Please try again.')
-      return
+    // Send SMS verification code (skipped while SMS_ENABLED = false)
+    if (SMS_ENABLED) {
+      try {
+        const res  = await fetch('/api/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: normalized }),
+        })
+        const json = await res.json()
+        if (!res.ok || json.error) throw new Error(json.error || 'Send failed')
+      } catch (sendErr) {
+        setLoading(false)
+        setErrorMsg('Could not send verification code. Please try again.')
+        return
+      }
     }
 
     setLoading(false)
@@ -149,16 +160,24 @@ export default function Login() {
     setLoading(true)
     setErrorMsg('')
 
-    try {
-      const normalized = normalizePhone(phone)
-      const res  = await fetch('/api/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalized, code: entered }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.ok) throw new Error(json.error || 'Verification failed')
-    } catch {
+    if (SMS_ENABLED) {
+      try {
+        const normalized = normalizePhone(phone)
+        const res  = await fetch('/api/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: normalized, code: entered }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.ok) throw new Error(json.error || 'Verification failed')
+      } catch {
+        setLoading(false)
+        recordFailedAttempt()
+        if (lockoutRemaining() > 0) { setLockedOut(true); return }
+        setErrorMsg('Incorrect code. Please try again.')
+        return
+      }
+    } else if (entered !== '123456') {
       setLoading(false)
       recordFailedAttempt()
       if (lockoutRemaining() > 0) { setLockedOut(true); return }
