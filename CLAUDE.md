@@ -301,3 +301,12 @@ Keep scope tight. Build what's listed. Nothing else.
 - [ ] Sign out clears localStorage and returns to login
 - [ ] App looks correct on a mobile screen (390px wide)
 - [ ] No member can access any other member's data
+
+---
+
+## Design Context
+
+Register: **product** (app UI — design serves the product, not the other way around).
+Full strategic context: `PRODUCT.md` at the project root.
+Visual system: `DESIGN.md` at the project root (generate with `/impeccable document` if missing).
+Live mode config: `.impeccable/live/config.json`.

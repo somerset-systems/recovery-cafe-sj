@@ -10,6 +10,45 @@ function isStaffEvent(title) {
   return STAFF_KEYWORDS.some(function(kw) { return t.includes(kw) })
 }
 
+// Recurring weekly schedule — shown as fallback when Google Calendar is unavailable.
+// Day: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+var RECURRING = [
+  { day: 1, time: '1:00 PM',  title: 'Barista Training',          location: 'Kitchen',   tag: 'Class' },
+  { day: 2, time: '10:00 AM', title: 'Art Workshop',               location: 'Main Hall', tag: 'Event' },
+  { day: 2, time: '1:00 PM',  title: 'Cooking Skills',             location: 'Kitchen',   tag: 'Class' },
+  { day: 3, time: '10:00 AM', title: 'Mindfulness & Meditation',   location: 'Room B',    tag: 'Class' },
+  { day: 4, time: '10:00 AM', title: 'Job Readiness Skills',       location: 'Room A',    tag: 'Class' },
+  { day: 5, time: '2:00 PM',  title: 'Friday Jam',                 location: 'Cafe Floor',tag: 'Music' },
+]
+
+function generateFallbackEvents() {
+  var today = new Date()
+  var cutoff = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+  var events = []
+  var id = 1
+  var d = new Date(today)
+  d.setHours(0, 0, 0, 0)
+
+  while (d <= cutoff) {
+    var dow = d.getDay()
+    for (var i = 0; i < RECURRING.length; i++) {
+      var r = RECURRING[i]
+      if (dow === r.day) {
+        events.push({
+          id:         'fallback-' + id++,
+          title:      r.title,
+          event_date: d.toISOString().slice(0, 10),
+          event_time: r.time,
+          location:   r.location,
+          tag:        r.tag,
+        })
+      }
+    }
+    d.setDate(d.getDate() + 1)
+  }
+  return events
+}
+
 const HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Content-Type': 'application/json',
@@ -33,10 +72,11 @@ exports.handler = async function() {
     const schoolId   = calendarId('SCHOOL')
 
     if (!programsId && !schoolId) {
+      console.warn('[events] No calendar IDs configured — returning fallback schedule')
       return {
-        statusCode: 500,
+        statusCode: 200,
         headers: HEADERS,
-        body: JSON.stringify({ error: 'No calendar IDs configured. Set CALENDAR_PROGRAMS and CALENDAR_SCHOOL env vars.' }),
+        body: JSON.stringify({ events: generateFallbackEvents(), warnings: ['Using fallback schedule — calendar not configured'] }),
       }
     }
 
@@ -62,10 +102,16 @@ exports.handler = async function() {
     filtered.sort(function(a, b) { return a._ms - b._ms })
     filtered.forEach(function(e) { delete e._ms })
 
+    // If both calendars returned nothing (e.g. token works but no events) use the fallback
+    const finalEvents = filtered.length > 0 ? filtered : generateFallbackEvents()
+    if (filtered.length === 0 && warnings.length === 0) {
+      warnings.push('No calendar events found — showing fallback schedule')
+    }
+
     return {
       statusCode: 200,
       headers: HEADERS,
-      body: JSON.stringify({ events: filtered, warnings }),
+      body: JSON.stringify({ events: finalEvents, warnings }),
     }
   } catch (err) {
     console.error('[events] unhandled error:', err)

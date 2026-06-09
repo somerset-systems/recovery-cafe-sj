@@ -856,7 +856,7 @@ async function runReal() {
         clientIdsFound++
       }
     }
-    const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(matchedKey) || ''
+    const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(rosterMatch?.matchedKey) || ''
     const choresDone  = Math.max(0, parseInt(choresCol ? row[choresCol] || '0' : '0', 10) || 0)
     const parsed      = parseCircleLabel(circleLabel)
 

@@ -8,6 +8,8 @@ import Events from './pages/Events.jsx'
 import Circle from './pages/Circle.jsx'
 import Chores from './pages/Chores.jsx'
 import Profile from './pages/Profile.jsx'
+import Privacy from './pages/Privacy.jsx'
+import Terms from './pages/Terms.jsx'
 import { colors } from './theme.js'
 
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000 // 30 days in ms
@@ -32,14 +34,15 @@ function AppShell() {
   const { member } = useMember()
   const { pathname } = useLocation()
   const isLogin = pathname === '/login'
+  const isStatic = pathname === '/privacy' || pathname === '/terms'
 
   return (
     <>
-      {!isLogin && <Header memberName={member?.full_name} />}
+      {!isLogin && !isStatic && <Header memberName={member?.full_name} />}
       <main
         style={{
-          paddingTop: isLogin ? 0 : 104,
-          paddingBottom: isLogin ? 0 : 60,
+          paddingTop: isLogin || isStatic ? 0 : 104,
+          paddingBottom: isLogin || isStatic ? 0 : 60,
           background: colors.background,
           minHeight: '100dvh',
           boxSizing: 'border-box',
@@ -47,6 +50,8 @@ function AppShell() {
       >
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
           <Route path="/events" element={<RequireAuth><Events /></RequireAuth>} />
           <Route path="/circle" element={<RequireAuth><Circle /></RequireAuth>} />
@@ -55,7 +60,7 @@ function AppShell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      {!isLogin && <BottomNav />}
+      {!isLogin && !isStatic && <BottomNav />}
     </>
   )
 }
