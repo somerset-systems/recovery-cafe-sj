@@ -90,10 +90,10 @@ export default function Privacy() {
           If you have any questions about this privacy policy or your data, please contact us:
           <br />
           <a
-            href="mailto:info@recoverycafesj.org"
+            href="mailto:tommy@recoverycafesj.org"
             style={{ color: colors.primaryGreen, fontWeight: 600 }}
           >
-            info@recoverycafesj.org
+            tommy@recoverycafesj.org
           </a>
           <br />
           Recovery Cafe San Jose

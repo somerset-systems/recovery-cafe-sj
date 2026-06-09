@@ -58,10 +58,10 @@ export default function Terms() {
           <br /><br />
           To opt out of SMS messages, contact a Recovery Cafe SJ staff member or email{' '}
           <a
-            href="mailto:info@recoverycafesj.org"
+            href="mailto:tommy@recoverycafesj.org"
             style={{ color: colors.primaryGreen, fontWeight: 600 }}
           >
-            info@recoverycafesj.org
+            tommy@recoverycafesj.org
           </a>
           . Note that opting out of SMS will require an alternative way for staff to verify
           your identity.
@@ -87,10 +87,10 @@ export default function Terms() {
         <Section title="Contact">
           Questions about these terms? Contact us at{' '}
           <a
-            href="mailto:info@recoverycafesj.org"
+            href="mailto:tommy@recoverycafesj.org"
             style={{ color: colors.primaryGreen, fontWeight: 600 }}
           >
-            info@recoverycafesj.org
+            tommy@recoverycafesj.org
           </a>
           .
         </Section>
