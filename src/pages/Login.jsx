@@ -45,6 +45,7 @@ function displayPhone(digits) {
 export default function Login() {
   const [phase, setPhase]                = useState('phone') // 'phone' | 'code'
   const [phone, setPhone]                = useState('')
+  const [consent, setConsent]            = useState(false) // SMS opt-in; must NOT be pre-checked
   const [code, setCode]                  = useState(['', '', '', '', '', ''])
   const [pendingMember, setPendingMember] = useState(null)
   const [loading, setLoading]            = useState(false)
@@ -63,12 +64,6 @@ export default function Login() {
     return () => clearTimeout(t)
   }, [lockedOut])
 
-  // Auto-fill 123456 while SMS is disabled so staff can log in immediately
-  useEffect(() => {
-    if (phase !== 'code' || SMS_ENABLED) return
-    setCode(['1', '2', '3', '4', '5', '6'])
-  }, [phase])
-
   // ── Phone screen handlers ──────────────────────────────────────────────────
 
   function handlePhoneChange(e) {
@@ -83,6 +78,11 @@ export default function Login() {
     const normalized = normalizePhone(phone)
     if (normalized.length !== 10) {
       setErrorMsg('Please enter a 10-digit phone number.')
+      return
+    }
+
+    if (!consent) {
+      setErrorMsg('Please check the box to agree to receive text messages.')
       return
     }
 
@@ -233,7 +233,7 @@ export default function Login() {
 
         <h1 style={styles.heading}>Enter your code</h1>
         <p style={{ ...styles.sub, marginBottom: 32 }}>
-          We sent a 6-digit code to {displayPhone(phone)}.
+          Enter your 6-digit code for {displayPhone(phone)}.
         </p>
 
         <form
@@ -249,6 +249,9 @@ export default function Login() {
                 type="text"
                 inputMode="numeric"
                 maxLength={1}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 value={digit}
                 onChange={e => handleCodeChange(i, e.target.value)}
                 onKeyDown={e => handleCodeKeyDown(i, e)}
@@ -310,10 +313,32 @@ export default function Login() {
           style={styles.phoneInput}
         />
 
+        {/* SMS consent opt-in — required for Twilio/A2P compliance. Not pre-checked. */}
+        <label style={styles.consentRow}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={e => { setConsent(e.target.checked); setErrorMsg('') }}
+            style={styles.consentBox}
+          />
+          <span style={styles.consentText}>
+            By checking this box, I agree to receive text messages from Recovery Cafe
+            San Jose — mainly one-time login codes and occasional account messages.
+            Message frequency varies. Message and data rates may apply. Reply HELP for
+            help or STOP to unsubscribe at any time. See our{' '}
+            <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
+              Terms of Service
+            </a>{' '}and{' '}
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
+              Privacy Policy
+            </a>.
+          </span>
+        </label>
+
         {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
         <button type="submit" disabled={loading} style={primaryBtn(loading)}>
-          {loading ? 'Looking up…' : 'Continue'}
+          {loading ? 'Looking up…' : 'Yes, sign me up!'}
         </button>
       </form>
     </Wrap>
@@ -411,6 +436,31 @@ const styles = {
     textDecoration: 'underline',
     padding: 0,
     textAlign: 'center',
+  },
+  consentRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  consentBox: {
+    width: 26,
+    height: 26,
+    marginTop: 2,
+    flexShrink: 0,
+    accentColor: colors.primaryGreen,
+    cursor: 'pointer',
+  },
+  consentText: {
+    fontSize: fontSize.small,
+    color: colors.textMedium,
+    lineHeight: 1.5,
+  },
+  consentLink: {
+    color: colors.primaryGreen,
+    fontWeight: 600,
+    textDecoration: 'underline',
   },
 }
 

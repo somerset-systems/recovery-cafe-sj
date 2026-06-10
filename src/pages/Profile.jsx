@@ -20,8 +20,7 @@ export default function Profile() {
   return (
     <div
       style={{
-        background: colors.background,
-        minHeight: 'calc(100dvh - 148px)',
+        minHeight: 'calc(100dvh - 164px)',
         padding: '20px 16px',
         boxSizing: 'border-box',
         display: 'flex',
@@ -29,13 +28,14 @@ export default function Profile() {
         gap: 14,
       }}
     >
-      {/* Member info card */}
       <Card>
         <SectionLabel label="Member" />
-        <p style={{ margin: '0 0 20px 0', fontSize: fontSize.xlarge, fontWeight: 700, color: colors.textDark }}>
+        <p style={{ margin: 0, fontSize: fontSize.xlarge, fontWeight: 700, color: colors.textDark }}>
           {member.full_name}
         </p>
+      </Card>
 
+      <Card>
         <SectionLabel label="Your Circle" />
         <p style={{ margin: '0 0 2px 0', fontSize: fontSize.medium, fontWeight: 600, color: colors.textDark }}>
           {member.circle_day} Circle
@@ -48,7 +48,7 @@ export default function Profile() {
         </p>
       </Card>
 
-      <div style={{ flex: 1 }} />
+      <div style={{ flex: 1, minHeight: 24 }} />
 
       <button
         onClick={handleSignOut}

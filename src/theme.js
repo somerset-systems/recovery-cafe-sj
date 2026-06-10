@@ -36,3 +36,15 @@ export const fontSize = {
   xlarge: 24,
   xxlarge: 32,
 }
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  page: 16,   // horizontal page margin
+  card: 20,   // card internal padding
+  gap: 14,    // standard gap between cards
+}

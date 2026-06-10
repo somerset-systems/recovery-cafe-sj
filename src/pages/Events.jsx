@@ -33,8 +33,6 @@ export default function Events() {
   return (
     <div
       style={{
-        background: colors.background,
-        minHeight: '100dvh',
         padding: '20px 16px',
         boxSizing: 'border-box',
       }}
@@ -55,7 +53,7 @@ export default function Events() {
         <p style={{ color: colors.textMedium, fontSize: fontSize.body }}>No upcoming events in the next 30 days.</p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {events.map((event) => {
           const { day, month, weekday } = parseDateParts(event.event_date)
           const tagStyle = TAG_STYLES[event.tag] || TAG_STYLES.Event
@@ -78,10 +76,10 @@ export default function Events() {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  minWidth: 44,
+                  minWidth: 52,
                   background: colors.background,
                   borderRadius: 8,
-                  padding: '6px 8px',
+                  padding: '6px 10px',
                   flexShrink: 0,
                 }}
               >

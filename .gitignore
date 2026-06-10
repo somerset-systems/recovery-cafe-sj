@@ -14,3 +14,8 @@ skip-report*.csv
 # Temporary screenshots
 screenshot-*.png
 screenshots/
+
+# Internal strategy / design docs (not for the public repo)
+DESIGN.md
+PRODUCT.md
+.impeccable/

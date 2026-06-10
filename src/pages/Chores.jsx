@@ -22,8 +22,7 @@ export default function Chores() {
   return (
     <div
       style={{
-        background: colors.background,
-        minHeight: 'calc(100dvh - 148px)',
+        minHeight: 'calc(100dvh - 164px)',
         padding: '20px 16px',
         boxSizing: 'border-box',
         display: 'flex',

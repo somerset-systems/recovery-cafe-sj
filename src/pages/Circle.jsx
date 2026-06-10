@@ -65,13 +65,11 @@ export default function Circle() {
   return (
     <div
       style={{
-        background: colors.background,
-        minHeight: '100dvh',
         padding: '20px 16px',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 16,
       }}
     >
       {/* Circle info */}

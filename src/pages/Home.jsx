@@ -79,12 +79,10 @@ export default function Home() {
   return (
     <div
       style={{
-        background: colors.background,
-        minHeight: '100dvh',
-        padding: '20px 16px 16px',
+        padding: '20px 16px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 16,
         boxSizing: 'border-box',
       }}
     >

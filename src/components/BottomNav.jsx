@@ -50,7 +50,7 @@ export default function BottomNav() {
               style={{
                 fontSize: 22,
                 lineHeight: 1,
-                filter: 'grayscale(1)',
+                filter: active ? 'none' : 'grayscale(1)',
                 opacity: active ? 1 : 0.45,
               }}
             >
