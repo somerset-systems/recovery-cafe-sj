@@ -25,6 +25,18 @@
   to = "/.netlify/functions/verify-code"
   status = 200
 
+# Serve static HTML for legal pages so Twilio's crawler (no JS) can read them.
+# These must come before the SPA catch-all below.
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200
+
+[[redirects]]
+  from = "/terms"
+  to = "/terms.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
