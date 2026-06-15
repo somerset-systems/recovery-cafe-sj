@@ -33,6 +33,8 @@ export default function BottomNav() {
           <button
             key={tab.path}
             onClick={() => navigate(tab.path)}
+            aria-current={active ? 'page' : undefined}
+            aria-label={tab.label}
             style={{
               flex: 1,
               display: 'flex',
@@ -47,6 +49,7 @@ export default function BottomNav() {
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 fontSize: 22,
                 lineHeight: 1,
@@ -60,7 +63,8 @@ export default function BottomNav() {
               style={{
                 fontSize: fontSize.small,
                 fontWeight: active ? 700 : 400,
-                color: active ? colors.primaryGreen : '#9CA3AF',
+                // textMedium (#555, 7.46:1) instead of #9CA3AF (2.54:1, fails WCAG AA)
+                color: active ? colors.primaryGreen : colors.textMedium,
               }}
             >
               {tab.label}

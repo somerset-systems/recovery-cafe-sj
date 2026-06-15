@@ -205,7 +205,7 @@ export default function Login() {
         <Logo visible={logoVisible} onError={() => setLogoVisible(false)} />
         <div
           style={{
-            background: colors.tagSpecialBg,
+            background: colors.dangerBg,
             borderRadius: 14,
             padding: '24px 28px',
             maxWidth: 340,
@@ -213,7 +213,7 @@ export default function Login() {
             textAlign: 'center',
           }}
         >
-          <p style={{ margin: '0 0 10px 0', fontSize: fontSize.medium, fontWeight: 700, color: colors.tagSpecial }}>
+          <p style={{ margin: '0 0 10px 0', fontSize: fontSize.medium, fontWeight: 700, color: colors.danger }}>
             Too many attempts
           </p>
           <p style={{ margin: 0, fontSize: fontSize.body, color: colors.textMedium, lineHeight: 1.5 }}>
@@ -248,6 +248,7 @@ export default function Login() {
                 ref={el => { codeRef.current[i] = el }}
                 type="text"
                 inputMode="numeric"
+                aria-label={`Digit ${i + 1} of 6`}
                 maxLength={1}
                 autoComplete="off"
                 autoCorrect="off"
@@ -306,6 +307,7 @@ export default function Login() {
         <input
           type="tel"
           inputMode="numeric"
+          aria-label="Phone number"
           placeholder="(408) 555-0000"
           value={displayPhone(phone)}
           onChange={handlePhoneChange}
@@ -469,12 +471,15 @@ function primaryBtn(disabled) {
     height: 52,
     borderRadius: 10,
     border: 'none',
-    background: disabled ? colors.accentGreen : colors.primaryGreen,
+    // Keep the green background when disabled so white text stays legible (white on
+    // accentGreen is only 2.47:1 and fails WCAG AA). Dim with opacity to signal "busy".
+    background: colors.primaryGreen,
+    opacity: disabled ? 0.7 : 1,
     color: colors.white,
     fontSize: fontSize.large,
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
     width: '100%',
-    transition: 'background 0.2s',
+    transition: 'opacity 0.2s',
   }
 }
