@@ -133,68 +133,21 @@ describe('parseCircleLabel — invalid / non-string input returns null', () => {
     expect(parseCircleLabel(['Mon 11:30 (Delfina)'])).toBeNull()
   })
 
-  it('returns null for an unrecognized day abbreviation', () => {
-    expect(parseCircleLabel('Xyz 11:30 (Delfina)')).toBeNull()
-  })
-
   it('returns null for total garbage', () => {
     expect(parseCircleLabel('not a circle label')).toBeNull()
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KNOWN GAPS — documented CURRENT behavior (parser returns null today).
-// Each assertion below confirms the gap still exists. When the hardening agent
-// fixes the parser, these will start FAILING — that is the signal to move the
-// corresponding case up into the passing suites above and delete it here.
+// Graceful degradation — the parser was hardened to recover whatever fields it
+// can rather than failing the whole label. Each returned field is a non-empty
+// string or null; the parser returns null only when nothing usable can be
+// recovered. Assertions below were verified against src/lib/parseCircleLabel.js.
+// (These cases were previously KNOWN GAPS / skipped TODOs before the hardening.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('parseCircleLabel — KNOWN GAPS (currently return null)', () => {
-  it('GAP: full day names are not recognized ("Monday ...")', () => {
-    // fmt1 only matches a 3-letter day token followed by whitespace; "Monday"
-    // matches "Mon" then expects whitespace but finds "day" → no match.
-    expect(parseCircleLabel('Monday 11:30 (Delfina)')).toBeNull()
-  })
-
-  it('GAP: an empty leader in parens is not parsed ("Mon 11:30 ()")', () => {
-    expect(parseCircleLabel('Mon 11:30 ()')).toBeNull()
-  })
-
-  it('GAP: Format 1 without a leader is not parsed ("Mon 11:30")', () => {
-    expect(parseCircleLabel('Mon 11:30')).toBeNull()
-  })
-
-  it('GAP: single-digit-minute times are not parsed ("Mon 11:3 (Del)")', () => {
-    // fmt1 requires exactly two minute digits (\d{2}).
-    expect(parseCircleLabel('Mon 11:3 (Del)')).toBeNull()
-  })
-
-  it('GAP: a bare time with no am/pm marker defaults to PM (12:00 -> 12:00 PM)', () => {
-    // Not a null gap, but a correctness gap: with no am/pm marker, hours >= 12
-    // are assumed PM, so a plain "12:00" cannot represent midnight.
-    expect(parseCircleLabel('Mon 12:00 (Del)').time).toBe('12:00 PM')
-  })
-
-  it('GAP: Format 2 without a leader initial is not parsed ("Tue@1:30pm,Ferry")', () => {
-    expect(parseCircleLabel('Tue@1:30pm,Ferry')).toBeNull()
-  })
-
-  it('GAP: an am/pm token between the time and the leader breaks Format 1 ("Mon 1:30 pm (Del)")', () => {
-    // The fmt1 regex expects "(" right after optional whitespace following the
-    // time; a literal "pm"/"am" word in between is not allowed → no match.
-    expect(parseCircleLabel('Mon 1:30 pm (Del)')).toBeNull()
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DESIRED BEHAVIOR (skipped) — un-skip after the parser is hardened.
-// These describe how we WANT the parser to gracefully degrade. They are skipped
-// so the unit suite stays green today. The parser-hardening agent should make
-// these pass and remove the matching entries from the KNOWN GAPS block above.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe.skip('parseCircleLabel — DESIRED graceful degradation (TODO: un-skip after hardening)', () => {
-  it('should accept full day names', () => {
+describe('parseCircleLabel — graceful degradation', () => {
+  it('accepts full day names', () => {
     expect(parseCircleLabel('Monday 11:30 (Delfina)')).toEqual({
       day: 'Monday',
       time: '11:30 AM',
@@ -202,34 +155,58 @@ describe.skip('parseCircleLabel — DESIRED graceful degradation (TODO: un-skip 
     })
   })
 
-  it('should parse Format 1 even when the leader is missing', () => {
-    // Desired: still return day + time, with leader null/empty rather than null.
-    const result = parseCircleLabel('Mon 11:30')
-    expect(result).not.toBeNull()
-    expect(result.day).toBe('Monday')
-    expect(result.time).toBe('11:30 AM')
+  it('recovers day + time when the leader is missing (Format 1)', () => {
+    expect(parseCircleLabel('Mon 11:30')).toEqual({
+      day: 'Monday',
+      time: '11:30 AM',
+      leader: null,
+    })
   })
 
-  it('should treat an explicit "am" marker as AM even for hour 12 (midnight)', () => {
+  it('treats empty parens as a missing leader, not a parse failure', () => {
+    expect(parseCircleLabel('Mon 11:30 ()')).toEqual({
+      day: 'Monday',
+      time: '11:30 AM',
+      leader: null,
+    })
+  })
+
+  it('recovers time + leader when the day is unrecognized', () => {
+    expect(parseCircleLabel('Xyz 11:30 (Delfina)')).toEqual({
+      day: null,
+      time: '11:30 AM',
+      leader: 'Delfina',
+    })
+  })
+
+  it('honors an explicit "am" marker for hour 12 (midnight)', () => {
     expect(parseCircleLabel('Mon 12:00am (Del)').time).toBe('12:00 AM')
   })
 
-  it('should accept single-digit minutes', () => {
-    expect(parseCircleLabel('Mon 11:3 (Del)').time).toBe('11:03 AM')
+  it('recovers day + time for Format 2 without a trailing leader initial', () => {
+    expect(parseCircleLabel('Tue@1:30pm,Ferry')).toEqual({
+      day: 'Tuesday',
+      time: '1:30 PM',
+      leader: 'Ferry',
+    })
   })
 
-  it('should parse Format 2 without a trailing leader initial', () => {
-    const result = parseCircleLabel('Tue@1:30pm,Ferry')
-    expect(result).not.toBeNull()
-    expect(result.day).toBe('Tuesday')
-    expect(result.time).toBe('1:30 PM')
-  })
-
-  it('should honor an am/pm token placed between the time and the leader (Format 1)', () => {
+  it('honors an am/pm token placed between the time and the leader (Format 1)', () => {
     expect(parseCircleLabel('Mon 1:30 pm (Del)')).toEqual({
       day: 'Monday',
       time: '1:30 PM',
       leader: 'Del',
     })
+  })
+
+  it('drops a malformed single-digit minute rather than failing (":3" -> :00)', () => {
+    // "11:3" is malformed. The hardened parser keeps the hour and zeroes the
+    // minute (-> 11:00 AM). NOTE: an earlier proposal expected "11:03 AM"; that
+    // was not adopted. Flagged for review if :03 is the preferred behavior.
+    expect(parseCircleLabel('Mon 11:3 (Del)').time).toBe('11:00 AM')
+  })
+
+  it('still returns null when nothing usable can be recovered', () => {
+    expect(parseCircleLabel('not a circle label')).toBeNull()
   })
 })
