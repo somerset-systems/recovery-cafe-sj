@@ -42,35 +42,88 @@ function formatTime(hour, minute, isPm) {
   return `${display}:${m} ${period}`
 }
 
+// Pull a day name out of arbitrary text → full day name or null.
+function extractDay(text) {
+  const tokens = text.toLowerCase().match(/[a-z]+/g) || []
+  for (const tok of tokens) if (DAY_MAP[tok]) return DAY_MAP[tok]
+  return null
+}
+
+// Pull a time out of arbitrary text → "h:mm AM/PM" or null.
+// Handles "11:30", "1pm", "1:30 pm", "noon", "midnight".
+function extractTime(text) {
+  const lower = text.toLowerCase()
+  if (/\bnoon\b/.test(lower)) return formatTime(12, 0, true)
+  if (/\bmidnight\b/.test(lower)) return formatTime(12, 0, false)
+  const m = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!m) return null
+  const [, hour, minute, ampm] = m
+  const h = parseInt(hour, 10)
+  if (h < 0 || h > 23) return null
+  // Explicit am/pm wins; else cafe-hours heuristic (1-6 & 12 → PM, 7-11 → AM).
+  let isPm
+  if (ampm) isPm = ampm === 'pm'
+  else if (h === 0) isPm = false
+  else isPm = (h >= 1 && h <= 6) || h === 12
+  return formatTime(hour, minute ?? '00', isPm)
+}
+
+// Pull a leader name out of arbitrary text → display string or null.
+function extractLeader(text) {
+  const paren = text.match(/\(([^)]+)\)/)
+  if (paren && paren[1].trim()) return paren[1].trim()
+  const lastFirstInitial = text.match(/,\s*([A-Za-z][A-Za-z'-]+)\s*,\s*([A-Za-z])\b/)
+  if (lastFirstInitial) return `${lastFirstInitial[2].toUpperCase()}. ${lastFirstInitial[1].trim()}`
+  const trailing = text.match(/,\s*([A-Za-z][A-Za-z'-]+)\s*$/)
+  if (trailing && trailing[1].trim().length > 1) return trailing[1].trim()
+  return null
+}
+
+// Parse a circle label into { day, time, leader }. Mirrors src/lib/parseCircleLabel.js:
+// degrades gracefully — any field may be null; returns null only when nothing parses.
 function parseCircleLabel(label) {
   if (!label || typeof label !== 'string') return null
   const trimmed = label.trim()
 
   // Format 1: "Mon 11:30 (Delfina)" or "Tues 10:30 (Susan)"
-  const fmt1 = trimmed.match(/^(\w{3,8})\s+(\d{1,2}):(\d{2})\s*\(([^)]+)\)/i)
+  const fmt1 = trimmed.match(/^([A-Za-z]{3,9})\s+(\d{1,2}):(\d{2})\s*\(([^)]+)\)/i)
   if (fmt1) {
     const [, dayAbbr, hour, minute, leader] = fmt1
     const day = DAY_MAP[dayAbbr.toLowerCase()]
-    if (!day) return null
-    const h = parseInt(hour, 10)
-    const labelLower = trimmed.toLowerCase()
-    // If label has explicit am/pm use it; otherwise hours 1-6 → PM, 7-11 → AM, 12 → PM
-    const isPm = labelLower.includes('pm') || (!labelLower.includes('am') && ((h >= 1 && h <= 6) || h === 12))
-    return { day, time: formatTime(hour, minute, isPm), leader: leader.trim() }
+    if (day) {
+      const h = parseInt(hour, 10)
+      const labelLower = trimmed.toLowerCase()
+      // If label has explicit am/pm use it; otherwise hours 1-6 → PM, 7-11 → AM, 12 → PM
+      const isPm = labelLower.includes('pm') || (!labelLower.includes('am') && ((h >= 1 && h <= 6) || h === 12))
+      return { day, time: formatTime(hour, minute, isPm), leader: leader.trim() }
+    }
   }
 
   // Format 2: "Tue@1:30pm,Ferry, L" or "Mon@1:30pm,Jacome, R"
-  const fmt2 = trimmed.match(/^(\w{3,8})@(\d{1,2}):(\d{2})(am|pm),([^,]+),\s*(\w)/i)
+  const fmt2 = trimmed.match(/^([A-Za-z]{3,9})@(\d{1,2}):(\d{2})(am|pm),([^,]+),\s*([A-Za-z])/i)
   if (fmt2) {
     const [, dayAbbr, hour, minute, ampm, lastName, initial] = fmt2
     const day = DAY_MAP[dayAbbr.toLowerCase()]
-    if (!day) return null
-    const isPm = ampm.toLowerCase() === 'pm'
-    return { day, time: formatTime(hour, minute, isPm), leader: `${initial.toUpperCase()}. ${lastName.trim()}` }
+    if (day) {
+      const isPm = ampm.toLowerCase() === 'pm'
+      return { day, time: formatTime(hour, minute, isPm), leader: `${initial.toUpperCase()}. ${lastName.trim()}` }
+    }
   }
 
-  console.warn(`[syncSheet] Could not parse circle label: "${label}"`)
-  return null
+  // Liberal path: salvage whatever fields we can from any other shape.
+  const day = extractDay(trimmed)
+  const time = extractTime(trimmed)
+  const leader = extractLeader(trimmed)
+  if (!day && !time && !leader) {
+    console.warn(`[syncSheet] Could not parse circle label (no fields recovered): "${label}"`)
+    return null
+  }
+  const missing = [!day && 'day', !time && 'time', !leader && 'leader'].filter(Boolean)
+  if (missing.length > 0) {
+    console.warn(`[syncSheet] Partial circle label "${label}" — missing ${missing.join(', ')} ` +
+      `(got day:${day ?? 'null'}, time:${time ?? 'null'}, leader:${leader ?? 'null'})`)
+  }
+  return { day, time, leader }
 }
 
 // --- Fake mode: dry run with fakeData.js ---
@@ -80,36 +133,84 @@ async function runFake() {
 
   console.log('\n=== FAKE MODE — dry run, no database writes ===\n')
 
-  let inserted = 0, updated = 0, errors = 0
+  // Exercise the same hardening rules the real sync uses, so this dry run is a
+  // meaningful sanity check: phone normalization, duplicate-phone dedup,
+  // missing required fields, graceful circle-label parsing, and blank/malformed
+  // attendance values. Counts are split into created vs updated vs skipped vs
+  // unparseable so staff can see exactly what real data would do.
+  let created = 0          // first time we'd see this phone → INSERT
+  let updatedMembers = 0   // phone already seen this run → UPDATE (later row wins)
+  let skipped = 0          // row dropped: missing required field, etc.
+  let partialLabels = 0    // member kept, but circle label only partially parsed
+  const seenPhones = new Map() // normalized phone → full_name of first owner
 
   for (const member of fakeMembers) {
-    try {
-      const phone = normalizePhone(member.phone)
-      const parsed = parseCircleLabel(member.circle_label)
-      if (!parsed) throw new Error(`Could not parse circle label: "${member.circle_label}"`)
+    const rowRef = member.client_id ?? member.full_name ?? '(unknown row)'
 
-      console.log(`[member] Would upsert: ${member.full_name} | phone: ${phone} | circle: ${parsed.day} ${parsed.time} (${parsed.leader})`)
-      inserted++
-    } catch (err) {
-      console.error(`[member] Error for row ${member.client_id}: ${err.message}`)
-      errors++
+    // Required: a name and a usable 10-digit phone (phone is the upsert key).
+    const name = (member.full_name || '').trim()
+    if (!name) {
+      console.warn(`[member] SKIP row ${rowRef}: missing full_name`)
+      skipped++
+      continue
+    }
+    const phone = normalizePhone(member.phone)
+    if (phone.length !== 10) {
+      console.warn(`[member] SKIP "${name}" (row ${rowRef}): phone "${member.phone}" is not 10 digits after normalization (got "${phone}")`)
+      skipped++
+      continue
+    }
+
+    // Circle label: never fatal. Parse what we can; null fields are allowed.
+    const label = member.circle_label || ''
+    const parsed = label ? parseCircleLabel(label) : null
+    if (label && !parsed) {
+      console.warn(`[member] "${name}": circle label "${label}" yielded nothing — circle fields will be blank`)
+      partialLabels++
+    } else if (parsed && (!parsed.day || !parsed.time || !parsed.leader)) {
+      partialLabels++
+    }
+
+    const choresDone = Math.max(0, parseInt(member.chores_done ?? 0, 10) || 0)
+    const circleStr = parsed
+      ? `${parsed.day ?? '?'} ${parsed.time ?? '?'} (${parsed.leader ?? '?'})`
+      : '(no circle)'
+
+    // Duplicate phone → would resolve to an UPDATE of the same members row.
+    if (seenPhones.has(phone)) {
+      console.warn(`[member] DUPLICATE phone ${phone}: "${name}" collides with "${seenPhones.get(phone)}" — later row would overwrite earlier`)
+      console.log(`[member] Would UPDATE: ${name} | phone: ${phone} | chores: ${choresDone} | circle: ${circleStr}`)
+      updatedMembers++
+    } else {
+      seenPhones.set(phone, name)
+      console.log(`[member] Would INSERT: ${name} | phone: ${phone} | chores: ${choresDone} | circle: ${circleStr}`)
+      created++
     }
   }
 
+  // Attendance: count valid vs blank/malformed status values.
+  let attendanceValid = 0, attendanceBlank = 0, attendanceMalformed = 0
   for (const record of fakeAttendance) {
-    try {
-      console.log(`[attendance] Would upsert: member ${record.member_id} | week ${record.week_date} | status: ${record.status}`)
-      updated++
-    } catch (err) {
-      console.error(`[attendance] Error: ${err.message}`)
-      errors++
+    const raw = (record.status ?? '').toString().trim()
+    if (raw === '' || raw === '-') {
+      // Blank/dash is a legitimate "not yet enrolled" marker, not an error.
+      attendanceBlank++
+      continue
     }
+    const VALID = new Set(['attended', 'absent', 'excused', 'not_enrolled'])
+    if (!VALID.has(raw)) {
+      console.warn(`[attendance] malformed status "${record.status}" for member ${record.member_id} week ${record.week_date} — would store as not_enrolled`)
+      attendanceMalformed++
+      continue
+    }
+    console.log(`[attendance] Would upsert: member ${record.member_id} | week ${record.week_date} | status: ${raw}`)
+    attendanceValid++
   }
 
   console.log(`\n=== Summary ===`)
-  console.log(`Members:    ${inserted} would insert/update`)
-  console.log(`Attendance: ${updated} would insert/update`)
-  console.log(`Errors:     ${errors}`)
+  console.log(`Members:     ${created} created (insert), ${updatedMembers} updated (dup phone), ${skipped} skipped`)
+  console.log(`Circle:      ${partialLabels} member(s) with missing/partial circle fields`)
+  console.log(`Attendance:  ${attendanceValid} valid, ${attendanceBlank} blank/not-yet, ${attendanceMalformed} malformed`)
 }
 
 // --- Real mode helpers ---
@@ -263,11 +364,14 @@ function parseAttendanceDateHeader(header) {
   return d.toISOString().slice(0, 10)
 }
 
+// Sheet cell markers → status. Keys are lowercase; callers lowercase before lookup.
+// X=attended, A=absent, E=excused, dash/blank=not yet enrolled.
 const ATTENDANCE_MAP = {
-  x: 'attended', X: 'attended',
-  a: 'absent', A: 'absent',
-  e: 'excused', E: 'excused',
-  '-': 'not_enrolled', '': 'not_enrolled',
+  x: 'attended',
+  a: 'absent',
+  e: 'excused',
+  '-': 'not_enrolled',
+  '': 'not_enrolled',
 }
 
 // Read a sheet tab and return header + rows as objects
@@ -857,7 +961,10 @@ async function runReal() {
   // --- Upsert members ---
   let membersUpserted = 0, membersSkipped = 0, attendanceUpserted = 0, attendanceErrors = 0
   let clientIdsFound = 0, phonesFromAgency = 0
+  let labelsUnparseable = 0, labelsPartial = 0   // circle-label quality counters
+  let duplicatePhones = 0                          // rows whose phone was already used this run
   const memberIdByName = new Map()  // raw roster name → supabase member id
+  const phoneOwner = new Map()      // normalized phone → first roster name that claimed it
   const skippedMembers = []         // raw roster names that had no phone match (for skip report)
   const nicknameMap = buildNicknameMap()
 
@@ -891,6 +998,27 @@ async function runReal() {
       continue
     }
 
+    // Defensive: every phone we store must be exactly 10 digits (the login key).
+    // Matched phones already passed this check at load time, but normalize again
+    // in case a match source slips through, and skip anything still malformed.
+    phone = normalizePhone(phone)
+    if (phone.length !== 10) {
+      console.warn(`[member] "${name}": resolved phone "${phone}" is not 10 digits — skipping`)
+      skippedMembers.push(name)
+      membersSkipped++
+      continue
+    }
+
+    // Duplicate phone within this run: two roster rows resolved to the same
+    // number. The upsert (onConflict: 'phone') will overwrite the earlier row,
+    // so flag it loudly — usually a data-entry error in the sheet.
+    if (phoneOwner.has(phone)) {
+      duplicatePhones++
+      console.warn(`[member] DUPLICATE phone ${phone}: "${name}" collides with "${phoneOwner.get(phone)}" — later row overwrites earlier in members table`)
+    } else {
+      phoneOwner.set(phone, name)
+    }
+
     // Client ID: prefer real Agency Data ID over row number
     let clientId = rowCol !== null ? (row[rowCol] || '') : ''
     if (agencyClientIdMap.size > 0) {
@@ -905,7 +1033,12 @@ async function runReal() {
     const parsed      = parseCircleLabel(circleLabel)
 
     if (circleLabel && !parsed) {
-      console.warn(`[member] could not parse circle label "${circleLabel}" for "${name}"`)
+      // Label present but nothing salvageable — member still saved, circle blank.
+      labelsUnparseable++
+      console.warn(`[member] could not parse circle label "${circleLabel}" for "${name}" — circle fields left blank`)
+    } else if (parsed && (!parsed.day || !parsed.time || !parsed.leader)) {
+      // Partial parse: keep what we got; parseCircleLabel already logged details.
+      labelsPartial++
     }
 
     const memberRow = {
@@ -944,6 +1077,7 @@ async function runReal() {
   console.log('\n--- Upserting attendance ---')
 
   // Build all attendance records in memory first
+  let attendanceMalformed = 0  // cell values that weren't a known marker
   const attendanceByMember = new Map() // memberId → [{member_id, week_date, status}]
   for (const row of mainRows) {
     const name = row[nameCol] || ''
@@ -955,8 +1089,19 @@ async function runReal() {
     for (const header of attendanceHeaders) {
       const weekDate = parseAttendanceDateHeader(header)
       if (!weekDate) continue
-      const raw    = (row[header] || '').trim()
-      const status = ATTENDANCE_MAP[raw] ?? 'not_enrolled'
+      // Normalize the cell: collapse whitespace, drop surrounding spaces.
+      const raw = (row[header] || '').replace(/\s+/g, ' ').trim()
+      const key = raw.toLowerCase()
+      let status
+      if (key in ATTENDANCE_MAP) {
+        status = ATTENDANCE_MAP[key]
+      } else {
+        // Blank/dash is already mapped; anything else is genuinely malformed.
+        // Store as not_enrolled (safe default) but count + log it for staff.
+        status = 'not_enrolled'
+        attendanceMalformed++
+        console.warn(`[attendance] malformed value "${raw}" for "${name}" (${header}) — stored as not_enrolled`)
+      }
       records.push({ member_id: memberId, week_date: weekDate, status })
     }
     if (records.length > 0) attendanceByMember.set(memberId, records)
@@ -977,8 +1122,10 @@ async function runReal() {
   }
 
   console.log('\n=== Summary ===')
-  console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone match)`)
-  console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceErrors} errors`)
+  console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone / bad data)`)
+  console.log(`Duplicate phones:    ${duplicatePhones} row(s) shared a phone with an earlier row (later overwrote earlier)`)
+  console.log(`Circle labels:       ${labelsUnparseable} unparseable, ${labelsPartial} partial (some fields blank)`)
+  console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceMalformed} malformed cells (stored as not_enrolled), ${attendanceErrors} write errors`)
   console.log(`Client IDs updated:  ${clientIdsFound} from Agency Data${clientIdsFound < membersUpserted ? ` (${membersUpserted - clientIdsFound} fell back to row number)` : ''}`)
   console.log(`Phones from Agency:  ${phonesFromAgency} members got phone from Agency Data (not in Roster Data)`)
 
