@@ -24,5 +24,10 @@ export default defineConfig({
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    // Force fake-data mode even when a local .env with real Supabase creds
+    // exists. Vite gives actual env vars priority over .env files, so blanking
+    // these keeps the suite on src/lib/fakeData.js (fake uuids like
+    // "member-uuid-1" are invalid against a real Supabase and fail otherwise).
+    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
   },
 })
