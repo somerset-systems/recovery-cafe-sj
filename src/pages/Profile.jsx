@@ -10,6 +10,7 @@ export default function Profile() {
 
   function handleSignOut() {
     localStorage.removeItem('memberId')
+    localStorage.removeItem('loginAt') // clear session timestamp too, matching RequireAuth
     navigate('/login')
   }
 

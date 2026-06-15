@@ -24,6 +24,7 @@ export const colors = {
   chipNotYet: '#888888',
 
   danger: '#C1440E',
+  dangerBg: '#FDF1EC', // light tint behind danger-colored text; danger on this = 4.63:1 (AA)
   white: '#FFFFFF',
   border: '#E0DAD3',
 }
