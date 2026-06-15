@@ -149,8 +149,46 @@ function waitForOAuthCode() {
   })
 }
 
+// Returns true if a service-account key is available (inline env var or local file).
+function hasServiceAccountKey() {
+  return !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+         existsSync(join(__dirname, '..', 'google-credentials.json'))
+}
+
 async function getGoogleAuth() {
   const { google } = await import('googleapis')
+
+  // --- Preferred: service account (unattended — never needs a browser) ---
+  // Source A: GOOGLE_SERVICE_ACCOUNT_KEY env var holding the full JSON key (used by CI / GitHub Actions).
+  // Source B: a google-credentials.json file in the project root (used for local unattended runs).
+  // To use this, share the Google Sheet (read-only) with the service account's client_email.
+  let serviceAccountCreds = null
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+      serviceAccountCreds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+    } catch (e) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is set but is not valid JSON: ' + e.message)
+    }
+  } else {
+    const keyFilePath = join(__dirname, '..', 'google-credentials.json')
+    if (existsSync(keyFilePath)) {
+      serviceAccountCreds = JSON.parse(readFileSync(keyFilePath, 'utf-8'))
+    }
+  }
+
+  if (serviceAccountCreds) {
+    const auth = new google.auth.GoogleAuth({
+      credentials: serviceAccountCreds,
+      scopes: [
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/calendar.readonly',
+      ],
+    })
+    console.log(`Using Google service account: ${serviceAccountCreds.client_email}`)
+    return { google, auth }
+  }
+
+  // --- Fallback: interactive personal OAuth (local dev only) ---
   const { GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET } = process.env
 
   const auth = new google.auth.OAuth2(
@@ -664,10 +702,16 @@ async function runReal() {
     SUPABASE_SERVICE_ROLE_KEY,
   } = process.env
 
+  // Google auth can come from a service account (preferred for unattended runs) OR
+  // the interactive OAuth flow. Only require the OAuth client creds when there's no service account.
+  const usingServiceAccount = hasServiceAccountKey()
+
   const missing = []
   if (!GOOGLE_SHEET_ID) missing.push('GOOGLE_SHEET_ID')
-  if (!GOOGLE_OAUTH_CLIENT_ID) missing.push('GOOGLE_OAUTH_CLIENT_ID')
-  if (!GOOGLE_OAUTH_CLIENT_SECRET) missing.push('GOOGLE_OAUTH_CLIENT_SECRET')
+  if (!usingServiceAccount) {
+    if (!GOOGLE_OAUTH_CLIENT_ID) missing.push('GOOGLE_OAUTH_CLIENT_ID (or set GOOGLE_SERVICE_ACCOUNT_KEY)')
+    if (!GOOGLE_OAUTH_CLIENT_SECRET) missing.push('GOOGLE_OAUTH_CLIENT_SECRET (or set GOOGLE_SERVICE_ACCOUNT_KEY)')
+  }
   if (!VITE_SUPABASE_URL) missing.push('VITE_SUPABASE_URL')
   if (!VITE_SUPABASE_ANON_KEY) missing.push('VITE_SUPABASE_ANON_KEY')
   if (missing.length > 0) {

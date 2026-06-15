@@ -1,0 +1,48 @@
+name: Sync roster
+
+# Pulls the live Google Sheet roster + attendance into Supabase.
+# Runs automatically once a day, and can be triggered by hand from the Actions tab.
+
+on:
+  schedule:
+    # GitHub cron is always UTC and does NOT follow daylight saving.
+    # 12:00 UTC = 5:00 AM PDT (summer) / 4:00 AM PST (winter).
+    - cron: '0 12 * * *'
+  workflow_dispatch: {} # manual "Run workflow" button
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run roster sync
+        run: node scripts/syncSheet.js
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # The skip report lists members who couldn't be matched to a phone number.
+      # It contains real names, so it is uploaded as a private build artifact, not committed.
+      - name: Upload skip report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skip-report
+          path: skip-report*.csv
+          if-no-files-found: ignore
+          retention-days: 7
