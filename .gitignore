@@ -19,3 +19,8 @@ screenshots/
 DESIGN.md
 PRODUCT.md
 .impeccable/
+
+# Test artifacts
+test-results/
+playwright-report/
+.playwright/
