@@ -5,8 +5,20 @@ import { colors, fontSize } from '../theme.js'
 
 const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_logo.png'
 
-// Set to true once Twilio compliance is approved and credentials are in Netlify.
-const SMS_ENABLED = false
+// ── SMS verification feature flag ───────────────────────────────────────────────
+// Twilio SMS verification is intentionally PAUSED until A2P/10DLC compliance is
+// approved. This flag is the single seam that turns it on. See TWILIO_INTEGRATION.md.
+//
+//   OFF (default): pure phone-number lookup. No consent box, no code screen.
+//                  Submitting a known number logs the member straight in. This is
+//                  exactly the behavior members see today; it must not change until
+//                  the flag is deliberately flipped.
+//   ON:            phone lookup → consent → /api/send-code → 6-digit code screen →
+//                  /api/verify-code → login.
+//
+// Enable by setting VITE_SMS_VERIFICATION_ENABLED=true in the environment. Anything
+// other than the exact string "true" (including unset) keeps it OFF.
+const SMS_ENABLED = import.meta.env.VITE_SMS_VERIFICATION_ENABLED === 'true'
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const RATE_KEY     = 'loginAttempts'
@@ -81,7 +93,9 @@ export default function Login() {
       return
     }
 
-    if (!consent) {
+    // SMS consent is only required on the verification path. With the flag OFF the
+    // app never sends a text, so there is nothing to consent to.
+    if (SMS_ENABLED && !consent) {
       setErrorMsg('Please check the box to agree to receive text messages.')
       return
     }
@@ -98,27 +112,42 @@ export default function Login() {
       return
     }
 
-    // Send SMS verification code (skipped while SMS_ENABLED = false)
-    if (SMS_ENABLED) {
-      try {
-        const res  = await fetch('/api/send-code', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: normalized }),
-        })
-        const json = await res.json()
-        if (!res.ok || json.error) throw new Error(json.error || 'Send failed')
-      } catch (sendErr) {
-        setLoading(false)
-        setErrorMsg('Could not send verification code. Please try again.')
-        return
-      }
+    // ── Flag OFF: pure phone lookup. Log in immediately, no code screen. ────────
+    if (!SMS_ENABLED) {
+      setLoading(false)
+      clearAttempts()
+      completeLogin(member)
+      return
+    }
+
+    // ── Flag ON: send the SMS code, then advance to the code-entry screen. ──────
+    try {
+      const res  = await fetch('/api/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized }),
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Send failed')
+    } catch (sendErr) {
+      setLoading(false)
+      setErrorMsg('Could not send verification code. Please try again.')
+      return
     }
 
     setLoading(false)
     clearAttempts()
     setPendingMember(member)
     setPhase('code')
+  }
+
+  // Shared login finalizer — used by both the direct (flag OFF) and verified
+  // (flag ON) paths so the localStorage keys and redirect stay identical.
+  function completeLogin(member) {
+    localStorage.setItem('memberId', member.id)
+    localStorage.setItem('loginAt', String(Date.now()))
+    window.dispatchEvent(new Event('memberLogin'))
+    navigate('/')
   }
 
   // ── Code screen handlers ───────────────────────────────────────────────────
@@ -160,24 +189,18 @@ export default function Login() {
     setLoading(true)
     setErrorMsg('')
 
-    if (SMS_ENABLED) {
-      try {
-        const normalized = normalizePhone(phone)
-        const res  = await fetch('/api/verify-code', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: normalized, code: entered }),
-        })
-        const json = await res.json()
-        if (!res.ok || !json.ok) throw new Error(json.error || 'Verification failed')
-      } catch {
-        setLoading(false)
-        recordFailedAttempt()
-        if (lockoutRemaining() > 0) { setLockedOut(true); return }
-        setErrorMsg('Incorrect code. Please try again.')
-        return
-      }
-    } else if (entered !== '123456') {
+    // The code screen is only reachable when SMS_ENABLED is true, so verification
+    // always goes through the real endpoint. (No dev bypass code.)
+    try {
+      const normalized = normalizePhone(phone)
+      const res  = await fetch('/api/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized, code: entered }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Verification failed')
+    } catch {
       setLoading(false)
       recordFailedAttempt()
       if (lockoutRemaining() > 0) { setLockedOut(true); return }
@@ -185,10 +208,7 @@ export default function Login() {
       return
     }
 
-    localStorage.setItem('memberId', pendingMember.id)
-    localStorage.setItem('loginAt', String(Date.now()))
-    window.dispatchEvent(new Event('memberLogin'))
-    navigate('/')
+    completeLogin(pendingMember)
   }
 
   function backToPhone() {
@@ -313,32 +333,36 @@ export default function Login() {
           style={styles.phoneInput}
         />
 
-        {/* SMS consent opt-in — required for Twilio/A2P compliance. Not pre-checked. */}
-        <label style={styles.consentRow}>
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={e => { setConsent(e.target.checked); setErrorMsg('') }}
-            style={styles.consentBox}
-          />
-          <span style={styles.consentText}>
-            By checking this box, I agree to receive text messages from Recovery Cafe
-            San Jose — mainly one-time login codes and occasional account messages.
-            Message frequency varies. Message and data rates may apply. Reply HELP for
-            help or STOP to unsubscribe at any time. See our{' '}
-            <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
-              Terms of Service
-            </a>{' '}and{' '}
-            <a href="/privacy" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
-              Privacy Policy
-            </a>.
-          </span>
-        </label>
+        {/* SMS consent opt-in — required for Twilio/A2P compliance. Not pre-checked.
+            Only shown on the verification path; hidden entirely while the flag is OFF
+            so the OFF login screen is just the phone field + button (today's UI). */}
+        {SMS_ENABLED && (
+          <label style={styles.consentRow}>
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={e => { setConsent(e.target.checked); setErrorMsg('') }}
+              style={styles.consentBox}
+            />
+            <span style={styles.consentText}>
+              By checking this box, I agree to receive text messages from Recovery Cafe
+              San Jose — mainly one-time login codes and occasional account messages.
+              Message frequency varies. Message and data rates may apply. Reply HELP for
+              help or STOP to unsubscribe at any time. See our{' '}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
+                Terms of Service
+              </a>{' '}and{' '}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
+                Privacy Policy
+              </a>.
+            </span>
+          </label>
+        )}
 
         {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
         <button type="submit" disabled={loading} style={primaryBtn(loading)}>
-          {loading ? 'Looking up…' : 'Yes, sign me up!'}
+          {loading ? 'Looking up…' : (SMS_ENABLED ? 'Yes, sign me up!' : 'Continue')}
         </button>
       </form>
     </Wrap>

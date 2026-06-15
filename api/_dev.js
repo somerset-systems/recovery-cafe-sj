@@ -31,6 +31,8 @@ if (existsSync(envPath)) {
 // Lazy-import handlers so env is populated before module-level code runs
 const { default: eventsHandler }         = await import('./events.js')
 const { default: circleLocationHandler } = await import('./circle-location.js')
+const { default: sendCodeHandler }       = await import('./send-code.js')
+const { default: verifyCodeHandler }     = await import('./verify-code.js')
 
 const PORT = 3747
 
@@ -41,6 +43,10 @@ const server = createServer((req, res) => {
     eventsHandler(req, res)
   } else if (path === '/api/circle-location') {
     circleLocationHandler(req, res)
+  } else if (path === '/api/send-code') {
+    sendCodeHandler(req, res)
+  } else if (path === '/api/verify-code') {
+    verifyCodeHandler(req, res)
   } else {
     res.writeHead(404, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ error: `Unknown route: ${path}` }))
