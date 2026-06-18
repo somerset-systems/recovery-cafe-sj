@@ -215,10 +215,6 @@ export default function Circle() {
                 View more ({history.length - MAX_WEEKS} older weeks)
               </button>
             )}
-
-            <p style={{ margin: '16px 0 0', fontSize: fontSize.small, color: colors.textLight, lineHeight: 1.4 }}>
-              Attendance records begin December 1, 2025.
-            </p>
           </>
         )}
       </Card>

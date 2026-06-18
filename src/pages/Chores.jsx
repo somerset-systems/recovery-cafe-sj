@@ -80,10 +80,6 @@ export default function Chores() {
         >
           {statusMessage(done, goal, ring)}
         </p>
-
-        <p style={{ margin: '18px 0 0', fontSize: fontSize.small, color: colors.textLight, textAlign: 'center', lineHeight: 1.4 }}>
-          Chore record-keeping began June 2026.
-        </p>
       </Card>
     </div>
   )
