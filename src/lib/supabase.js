@@ -1,4 +1,4 @@
-import { fakeMembers, fakeAttendance, fakeEvents } from './fakeData.js'
+import { fakeMembers, fakeAttendance, fakeEvents, fakeChoreMonths } from './fakeData.js'
 
 const isFakeMode = !import.meta.env.VITE_SUPABASE_URL
 
@@ -34,6 +34,13 @@ const fakeDb = {
       .filter((e) => e.event_date >= today)
       .sort((a, b) => a.event_date.localeCompare(b.event_date))
     return Promise.resolve({ data: events, error: null })
+  },
+
+  getChoreMonthsForMember(memberId) {
+    const records = fakeChoreMonths
+      .filter((c) => c.member_id === memberId)
+      .sort((a, b) => a.month.localeCompare(b.month))
+    return Promise.resolve({ data: records, error: null })
   },
 }
 
@@ -84,6 +91,15 @@ if (!isFakeMode) {
         .select('*')
         .gte('event_date', today)
         .order('event_date', { ascending: true })
+      return { data: data || [], error }
+    },
+
+    async getChoreMonthsForMember(memberId) {
+      const { data, error } = await client
+        .from('chore_months')
+        .select('*')
+        .eq('member_id', memberId)
+        .order('month', { ascending: true })
       return { data: data || [], error }
     },
   }

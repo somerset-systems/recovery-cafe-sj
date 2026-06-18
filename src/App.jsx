@@ -10,6 +10,7 @@ import Chores from './pages/Chores.jsx'
 import Profile from './pages/Profile.jsx'
 import Privacy from './pages/Privacy.jsx'
 import Terms from './pages/Terms.jsx'
+import BadgesPreview from './pages/BadgesPreview.jsx'
 import { colors } from './theme.js'
 
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000 // 30 days in ms
@@ -50,6 +51,7 @@ function AppShell() {
       >
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/badges-preview" element={<BadgesPreview />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />

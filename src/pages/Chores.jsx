@@ -2,13 +2,18 @@ import { useMember } from '../hooks/useMember.js'
 import ChoreRing from '../components/ChoreRing.jsx'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
+import { getRings } from '../lib/choreRings.js'
 import { colors, fontSize } from '../theme.js'
 
-function statusMessage(done, goal) {
+// Plain-language progress line. Below the goal it nudges; at and beyond it, it
+// names exactly how many chores close the ring they're working on.
+function statusMessage(done, goal, ring) {
   if (done === 0) return 'Sign up for chores at the front desk'
   if (done < goal) return "Keep going, you're almost there!"
-  if (done === goal) return 'Amazing! You hit your goal this month! 🎉'
-  return 'Amazing! You went above and beyond this month! 🎉'
+  if (ring.allClosed) return 'You closed every ring this month — incredible! 🎉'
+  if (ring.justClosed) return `You closed your ${ring.justClosed.name} ring! 🎉`
+  const n = ring.remaining
+  return `${n} more ${n === 1 ? 'chore' : 'chores'} to close your ${ring.activeName} ring!`
 }
 
 export default function Chores() {
@@ -20,8 +25,8 @@ export default function Chores() {
 
   const done = member.chores_done
   const goal = member.chores_goal
-  const celebrating = done >= goal
-  const extra = Math.max(0, done - goal)
+  const ring = getRings(done)
+  const celebrating = done >= goal || !!ring.justClosed || ring.allClosed
 
   return (
     <div
@@ -47,33 +52,33 @@ export default function Chores() {
           <SectionLabel label="Your Chores This Month" />
         </div>
 
-        <div style={{ width: '100%', maxWidth: 240 }}>
-          <ChoreRing value={done} goal={goal} size={240} />
+        <div style={{ width: '100%', maxWidth: 288 }}>
+          <ChoreRing value={done} goal={goal} size={288} />
         </div>
 
         <p
           style={{
-            margin: '24px 0 8px',
+            margin: '20px 0 8px',
             fontSize: fontSize.xlarge,
             fontWeight: 700,
             color: colors.textDark,
             textAlign: 'center',
           }}
         >
-          {extra > 0 ? `${done} chores this month` : `${done} of ${goal} chores`}
+          {done < goal ? `${done} of ${goal} chores` : `${done} chores this month`}
         </p>
 
         <p
           style={{
             margin: 0,
             fontSize: fontSize.medium,
-            color: celebrating ? colors.accentGreen : colors.textMedium,
+            color: celebrating ? (ring.activeColor || colors.accentGreen) : colors.textMedium,
             textAlign: 'center',
             fontWeight: celebrating ? 600 : 400,
             lineHeight: 1.4,
           }}
         >
-          {statusMessage(done, goal)}
+          {statusMessage(done, goal, ring)}
         </p>
       </Card>
     </div>

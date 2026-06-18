@@ -209,6 +209,7 @@ async function runFake() {
 
   console.log(`\n=== Summary ===`)
   console.log(`Members:     ${created} created (insert), ${updatedMembers} updated (dup phone), ${skipped} skipped`)
+  console.log(`Chore snaps: ${created + updatedMembers} chore-month snapshot(s) would be written for the current month`)
   console.log(`Circle:      ${partialLabels} member(s) with missing/partial circle fields`)
   console.log(`Attendance:  ${attendanceValid} valid, ${attendanceBlank} blank/not-yet, ${attendanceMalformed} malformed`)
 }
@@ -968,6 +969,14 @@ async function runReal() {
   const skippedMembers = []         // raw roster names that had no phone match (for skip report)
   const nicknameMap = buildNicknameMap()
 
+  // Monthly chore snapshots — written so badges stay durable instead of resetting
+  // with the sheet each month. We record this run's chore count under the current
+  // calendar month; chores climb through a month, so the last sync of the month
+  // captures the peak. One row per (member, month); see chore_months migration.
+  const now = new Date()
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const choreSnapshots = []  // [{ member_id, month, chores_done }]
+
   console.log('\n--- Upserting members ---')
 
   for (const row of mainRows) {
@@ -1064,6 +1073,7 @@ async function runReal() {
       if (error) throw error
       memberIdByName.set(name, data.id)
       membersUpserted++
+      choreSnapshots.push({ member_id: data.id, month: currentMonth, chores_done: choresDone })
       console.log(`[member] ✓ ${name} | ${phone} | chores: ${choresDone}`)
     } catch (err) {
       console.error(`[member] ✗ "${name}": ${err.message}`)
@@ -1072,8 +1082,12 @@ async function runReal() {
   }
 
   // --- Upsert attendance ---
-  // Uses delete+bulk-insert per member instead of onConflict upsert, so no unique
-  // constraint is required on the attendance table (though you can add one later).
+  // Non-destructive upsert keyed on (member_id, week_date): existing weeks update
+  // in place, new weeks add on, and — crucially — weeks that have rolled off the
+  // sheet are LEFT IN PLACE. This makes Supabase the permanent record so lifetime
+  // counters (e.g. "100 Circles") keep accumulating across years even after the
+  // roster sheet stops carrying old week columns. Requires the unique constraint
+  // from supabase/attendance_unique.sql.
   console.log('\n--- Upserting attendance ---')
 
   // Build all attendance records in memory first
@@ -1107,22 +1121,44 @@ async function runReal() {
     if (records.length > 0) attendanceByMember.set(memberId, records)
   }
 
-  // Delete then bulk-insert per member
+  // Upsert per member — never delete. Old weeks not in this sync are retained.
   for (const [memberId, records] of attendanceByMember) {
     try {
-      const { error: delErr } = await supabase.from('attendance').delete().eq('member_id', memberId)
-      if (delErr) throw delErr
-      const { error: insErr } = await supabase.from('attendance').insert(records)
-      if (insErr) throw insErr
+      const { error } = await supabase
+        .from('attendance')
+        .upsert(records, { onConflict: 'member_id,week_date' })
+      if (error) throw error
       attendanceUpserted += records.length
     } catch (err) {
       console.error(`[attendance] ✗ member ${memberId}: ${err.message}`)
+      console.error('[attendance] (If this is a "no unique/exclusion constraint" error, run supabase/attendance_unique.sql.)')
       attendanceErrors++
+    }
+  }
+
+  // --- Upsert chore-month snapshots ---
+  // One row per (member, current month). onConflict keeps it idempotent: re-running
+  // the sync overwrites this month's row with the latest count (chores only climb
+  // within a month, so this lands on the peak). Past months are left untouched.
+  console.log('\n--- Upserting chore snapshots ---')
+  let choreMonthsUpserted = 0, choreMonthErrors = 0
+  if (choreSnapshots.length > 0) {
+    try {
+      const { error } = await supabase
+        .from('chore_months')
+        .upsert(choreSnapshots, { onConflict: 'member_id,month' })
+      if (error) throw error
+      choreMonthsUpserted = choreSnapshots.length
+    } catch (err) {
+      choreMonthErrors = choreSnapshots.length
+      console.error(`[chore_months] ✗ ${err.message}`)
+      console.error('[chore_months] (If this is a "relation does not exist" error, run the chore_months migration in supabase/migrations/.)')
     }
   }
 
   console.log('\n=== Summary ===')
   console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone / bad data)`)
+  console.log(`Chore snapshots:     ${choreMonthsUpserted} upserted for ${currentMonth}${choreMonthErrors ? `, ${choreMonthErrors} failed` : ''}`)
   console.log(`Duplicate phones:    ${duplicatePhones} row(s) shared a phone with an earlier row (later overwrote earlier)`)
   console.log(`Circle labels:       ${labelsUnparseable} unparseable, ${labelsPartial} partial (some fields blank)`)
   console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceMalformed} malformed cells (stored as not_enrolled), ${attendanceErrors} write errors`)

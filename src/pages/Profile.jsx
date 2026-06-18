@@ -1,12 +1,35 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMember } from '../hooks/useMember.js'
+import { db } from '../lib/supabase.js'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
+import BadgesCard from '../components/BadgesCard.jsx'
 import { colors, fontSize } from '../theme.js'
 
 export default function Profile() {
   const { member, loading, error } = useMember()
   const navigate = useNavigate()
+  const [attendance, setAttendance] = useState([])
+  const [choreMonths, setChoreMonths] = useState([])
+  const [badgesLoading, setBadgesLoading] = useState(true)
+
+  // Badges derive from durable history: attendance weeks + the monthly chore
+  // snapshot. Load both; failures fall back to empty lists rather than blocking.
+  useEffect(() => {
+    if (!member) return
+    let active = true
+    Promise.all([
+      db.getAttendanceForMember(member.id),
+      db.getChoreMonthsForMember(member.id),
+    ]).then(([att, chore]) => {
+      if (!active) return
+      setAttendance(att.data || [])
+      setChoreMonths(chore.data || [])
+      setBadgesLoading(false)
+    })
+    return () => { active = false }
+  }, [member])
 
   function handleSignOut() {
     localStorage.removeItem('memberId')
@@ -48,6 +71,8 @@ export default function Profile() {
           Led by {member.circle_leader}
         </p>
       </Card>
+
+      <BadgesCard member={member} attendance={attendance} choreMonths={choreMonths} loading={badgesLoading} />
 
       <div style={{ flex: 1, minHeight: 24 }} />
 

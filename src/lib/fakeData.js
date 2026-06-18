@@ -100,6 +100,28 @@ export const fakeAttendance = [
   { id: 'att-20', member_id: 'member-uuid-5', week_date: '2026-05-25', status: 'absent' },
 ]
 
+// Monthly chore snapshots — the durable history that powers chore badges.
+// Each row is one member's final chore count for one calendar month ('YYYY-MM').
+// The live current-month value still comes from members.chores_done; this table
+// only holds *concluded* (and in-progress, after a sync) months so badges persist
+// instead of resetting. The sync script upserts the current month each run.
+export const fakeChoreMonths = [
+  // David Kim — a showcase member: has closed his teal ring five separate months.
+  { member_id: 'member-uuid-4', month: '2026-01', chores_done: 7 },  // green, teal
+  { member_id: 'member-uuid-4', month: '2026-02', chores_done: 12 }, // + blue
+  { member_id: 'member-uuid-4', month: '2026-03', chores_done: 8 },  // green, teal
+  { member_id: 'member-uuid-4', month: '2026-04', chores_done: 19 }, // + blue, purple
+  { member_id: 'member-uuid-4', month: '2026-05', chores_done: 7 },  // green, teal
+
+  // Rosa Nguyen — steady: hits her green goal most months.
+  { member_id: 'member-uuid-3', month: '2026-03', chores_done: 3 },
+  { member_id: 'member-uuid-3', month: '2026-04', chores_done: 4 },
+  { member_id: 'member-uuid-3', month: '2026-05', chores_done: 3 },
+
+  // James Carter — getting started.
+  { member_id: 'member-uuid-2', month: '2026-05', chores_done: 2 },
+]
+
 // 7 events. Dates are anchored to 2026-05-27 (Wednesday).
 // Each date matches the actual day of week for that recurring event.
 // tag: "Class" | "Workshop" | "Music" | "Special"

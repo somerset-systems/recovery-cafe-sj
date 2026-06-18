@@ -28,16 +28,25 @@ export const colors = {
   white: '#FFFFFF',
   border: '#E0DAD3',
 
-  // Chore "crown": chores beyond the 3/month goal add stars around the ring, and
-  // every 3 extra chores the crown steps to the next warm metal (a new "tier").
-  // Past the last metal the tier keeps climbing via glow, so it scales to any count.
-  crownTiers: [
-    '#F7C948', // gold        (tier 1, +3)
-    '#F0B000', // deep gold   (tier 2, +6)
-    '#E08A00', // amber       (tier 3, +9)
-    '#C9740C', // burnt amber (tier 4, +12)
-    '#B05E1D', // copper      (tier 5, +15)
-    '#8C6239', // bronze      (tier 6+, then glow intensifies)
+  // Chore "rings": the green goal ring is the innermost; every tier beyond it is a
+  // concentric outer ring in a complementary colour (see lib/choreRings.js +
+  // components/ChoreRing.jsx). Chores fill the rings from the inside out, and a
+  // member only sees the ring they're working on (plus the ones they've already
+  // closed) — the next ring opens the moment the current one closes.
+  // `cap` is how many chores a ring holds. Early rings are small so the first few
+  // close fast (most members do well under 10 chores); the caps then ramp up, with
+  // gold the hard finale, so the top stays aspirational. Close points (cumulative):
+  // green 3, teal 7, blue 12, purple 19, plum 30, rose 50, gold 80.
+  // Colours walk the wheel green → teal → blue → purple → plum → rose → gold, all
+  // kept at a medium, cafe-friendly saturation so they sit on cream together.
+  choreRings: [
+    { name: 'green',  color: '#2D6A4F', cap: 3 },  // the goal ring (recovery green)
+    { name: 'teal',   color: '#2A8C8C', cap: 4 },
+    { name: 'blue',   color: '#3E6CA6', cap: 5 },
+    { name: 'purple', color: '#6B5BB0', cap: 7 },
+    { name: 'plum',   color: '#9E4E88', cap: 11 },
+    { name: 'rose',   color: '#C75C6B', cap: 20 },
+    { name: 'gold',   color: '#C9982E', cap: 30 },
   ],
 }
 
