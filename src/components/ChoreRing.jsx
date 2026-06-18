@@ -4,31 +4,32 @@ import { colors } from '../theme.js'
 /**
  * Chore progress ring with a growing "crown" of stars for chores beyond the goal.
  *
- *  - 0..goal:   the green ring fills like a normal progress ring.
- *  - == goal:   solid ring + checkmark (goal reached).
- *  - >  goal:   every extra chore adds one gold star around the ring. A full lap
- *               (12 stars) starts a new outer layer in a deeper gold, so someone
- *               with 54 chores sees a visibly fuller, richer crown than someone
- *               with 53. The exact count always lives in the label below the ring.
+ *  - 0..goal:  the green ring fills like a normal progress ring.
+ *  - == goal:  solid ring + checkmark (goal reached).
+ *  - >  goal:  each extra chore adds a star. Stars fill rings of growing size
+ *              (3, then 5, then 8, 13, 21, 34), so the first new ring lands at
+ *              just +3 chores and later rings get fuller and rarer. Each ring is
+ *              a deeper warm metal. The crown geometry is capped so it stays tidy
+ *              at any count; the exact number always shows in the label below.
  *
- * Everything is drawn in one SVG with a viewBox, so it scales cleanly to any
- * width without the ring and crown ever drifting out of alignment.
+ * One scalable SVG (viewBox), so the ring and crown never drift out of alignment.
  */
 
-const VB = 260                 // viewBox square
-const C = VB / 2               // center
+const VB = 260
+const C = VB / 2
 const STROKE = 12
-const RING_R = 84              // core ring radius
+const RING_R = 80
 const RING_CIRC = 2 * Math.PI * RING_R
 
-const STARS_PER_LAYER = 12
-const MAX_LAYERS = 3           // beyond this the count keeps climbing in the label
-const LAYER_RADII = [99, 110, 121]
-const STAR_R = 8
-const NEWEST_R = 9.5
-const LAYER_GOLDS = [colors.crownGold1, colors.crownGold2, colors.crownGold3]
+// Stars per ring, growing outward (~Fibonacci). Cumulative: 3, 8, 16, 29, 50, 84.
+const RING_CAPACITY = [3, 5, 8, 13, 21, 34]
+const CROWN_MAX = RING_CAPACITY.reduce((a, b) => a + b, 0) // 84
+const R_INNER = 94   // radius of the first star ring
+const R_OUTER = 126  // radius cap for the outermost ring
 
-// Five-point star path, outer radius r, pointing up, centered at (cx, cy).
+// Star outer radius shrinks as more rings appear so everything keeps fitting.
+const STAR_R_BY_RINGS = [0, 8, 7, 6, 5, 4.5, 4]
+
 function starPath(cx, cy, r) {
   const inner = r * 0.42
   let d = ''
@@ -40,36 +41,51 @@ function starPath(cx, cy, r) {
   return d + 'Z'
 }
 
-// Build the list of crown stars for `extra` chores beyond goal.
-function buildStars(extra) {
+// Split `total` stars into rings, then place each ring's stars evenly around it.
+function buildCrown(extra) {
+  const total = Math.min(extra, CROWN_MAX)
+  const counts = []
+  let rem = total
+  for (const cap of RING_CAPACITY) {
+    if (rem <= 0) break
+    counts.push(Math.min(rem, cap))
+    rem -= cap
+  }
+  const rings = counts.length
+  const starR = STAR_R_BY_RINGS[Math.min(rings, STAR_R_BY_RINGS.length - 1)]
+  const step = rings <= 1 ? 0 : Math.min(11, (R_OUTER - R_INNER) / (rings - 1))
+
   const stars = []
-  const shownLayers = Math.min(Math.ceil(extra / STARS_PER_LAYER), MAX_LAYERS)
-  for (let layer = 0; layer < shownLayers; layer++) {
-    const isFull = layer < Math.floor(extra / STARS_PER_LAYER)
-    const count = isFull ? STARS_PER_LAYER : extra % STARS_PER_LAYER
-    const r = LAYER_RADII[layer]
-    for (let i = 0; i < count; i++) {
-      const a = (Math.PI / 6) * i - Math.PI / 2 // 30° steps, first star at top
-      const idx = layer * STARS_PER_LAYER + i
+  let idx = 0
+  for (let k = 0; k < rings; k++) {
+    const n = counts[k]
+    const r = rings === 1 ? 102 : R_INNER + k * step
+    const color = colors.crownTiers[Math.min(k, colors.crownTiers.length - 1)]
+    for (let i = 0; i < n; i++) {
+      const a = (-Math.PI / 2) + i * ((2 * Math.PI) / n)
       stars.push({
         cx: C + r * Math.cos(a),
         cy: C + r * Math.sin(a),
-        color: LAYER_GOLDS[Math.min(layer, LAYER_GOLDS.length - 1)],
+        r: starR,
+        color,
         idx,
-        newest: idx === extra - 1, // the chore they just earned
+        newest: idx === total - 1,
       })
+      idx++
     }
   }
-  return stars
+  return { stars, total }
 }
 
 export default function ChoreRing({ value = 0, goal = 3, size = 240 }) {
   const celebrating = value >= goal
   const progress = celebrating ? 1 : Math.min(value / goal, 1)
   const extra = Math.max(0, value - goal)
-  const stars = buildStars(extra)
+  const { stars, total } = buildCrown(extra)
 
-  // Animate the ring fill from empty on mount (matches the small ProgressRing).
+  // Keep the whole entrance under ~1.4s no matter how many stars there are.
+  const delayStep = Math.min(0.05, 1.2 / Math.max(total, 1))
+
   const [offset, setOffset] = useState(RING_CIRC)
   useEffect(() => {
     const raf = requestAnimationFrame(() => setOffset(RING_CIRC * (1 - progress)))
@@ -91,9 +107,7 @@ export default function ChoreRing({ value = 0, goal = 3, size = 240 }) {
           : `${value} of ${goal} chores done`
       }
     >
-      {/* Track */}
       <circle cx={C} cy={C} r={RING_R} fill="none" stroke={colors.border} strokeWidth={STROKE} />
-      {/* Progress arc */}
       <circle
         cx={C}
         cy={C}
@@ -108,25 +122,21 @@ export default function ChoreRing({ value = 0, goal = 3, size = 240 }) {
         style={{ transition: 'stroke-dashoffset 0.8s ease' }}
       />
 
-      {/* Crown */}
       {stars.map((s) => (
         <path
           key={s.idx}
-          d={starPath(s.cx, s.cy, s.newest ? NEWEST_R : STAR_R)}
+          d={starPath(s.cx, s.cy, s.newest ? s.r + 1.5 : s.r)}
           fill={s.color}
           className={s.newest ? 'crown-star crown-star-newest' : 'crown-star'}
           style={{
             transformBox: 'fill-box',
             transformOrigin: 'center',
-            // Two delays: entrance pop (staggered, newest lands last), then the
-            // idle twinkle starts ~1s after this star has popped in.
-            animationDelay: `${(0.55 + s.idx * 0.05).toFixed(2)}s, ${(1.55 + s.idx * 0.05).toFixed(2)}s`,
+            animationDelay: `${(0.55 + s.idx * delayStep).toFixed(2)}s, ${(1.55 + s.idx * delayStep).toFixed(2)}s`,
           }}
           aria-hidden="true"
         />
       ))}
 
-      {/* Center mark: checkmark once the goal is met, otherwise the running count. */}
       <text
         x={C}
         y={C}

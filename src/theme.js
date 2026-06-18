@@ -28,11 +28,17 @@ export const colors = {
   white: '#FFFFFF',
   border: '#E0DAD3',
 
-  // Chore "crown": each chore beyond the 3/month goal adds a star around the ring.
-  // Successive crown layers deepen warm-gold to amber so higher counts read richer.
-  crownGold1: '#F4B400', // first layer  (4–15 chores)
-  crownGold2: '#E0950B', // second layer (16–27)
-  crownGold3: '#C98A0A', // third layer  (28+)
+  // Chore "crown": chores beyond the 3/month goal add stars around the ring, and
+  // every 3 extra chores the crown steps to the next warm metal (a new "tier").
+  // Past the last metal the tier keeps climbing via glow, so it scales to any count.
+  crownTiers: [
+    '#F7C948', // gold        (tier 1, +3)
+    '#F0B000', // deep gold   (tier 2, +6)
+    '#E08A00', // amber       (tier 3, +9)
+    '#C9740C', // burnt amber (tier 4, +12)
+    '#B05E1D', // copper      (tier 5, +15)
+    '#8C6239', // bronze      (tier 6+, then glow intensifies)
+  ],
 }
 
 export const fontSize = {
