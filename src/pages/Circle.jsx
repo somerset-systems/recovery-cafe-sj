@@ -27,6 +27,20 @@ function currentWeekSunday() {
   return `${d.getFullYear()}-${m}-${day}`
 }
 
+// Current attendance streak: consecutive circles attended, counting back from the
+// most recent week. An absence ends the streak; excused weeks and weeks with no
+// record are neutral — they neither add to it nor break it. `historyDesc` is the
+// attendance list newest-first, already trimmed to HISTORY_START → today.
+function currentStreak(historyDesc) {
+  let streak = 0
+  for (const r of historyDesc) {
+    if (r.status === 'attended') streak++
+    else if (r.status === 'absent') break
+    // excused / not_enrolled (no record / not yet): neutral — keep counting back
+  }
+  return streak
+}
+
 // Only show history from this date forward (no records before the program started tracking)
 const HISTORY_START = '2025-12-01'
 // Max weeks shown before "View more" is offered
@@ -76,6 +90,7 @@ export default function Circle() {
 
   const hasMore = history.length > MAX_WEEKS
   const displayed = showAll ? history : history.slice(0, MAX_WEEKS)
+  const streak = currentStreak(history)
 
   return (
     <div
@@ -105,6 +120,21 @@ export default function Circle() {
           Led by {member.circle_leader}
         </p>
       </Card>
+
+      {/* Current streak — only shown once it's something to celebrate (2+). */}
+      {streak >= 2 && (
+        <Card style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ fontSize: 44, lineHeight: 1, flexShrink: 0 }}>🔥</div>
+          <div>
+            <p style={{ margin: 0, fontSize: fontSize.xxlarge, fontWeight: 800, color: colors.primaryGreen }}>
+              {streak} in a row
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: fontSize.body, color: colors.textMedium, lineHeight: 1.4 }}>
+              circles attended since your last miss — keep it going!
+            </p>
+          </div>
+        </Card>
+      )}
 
       {/* Attendance history */}
       <Card>
