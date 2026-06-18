@@ -54,7 +54,38 @@ function calendarId(name) {
 
 // ── Client factory ────────────────────────────────────────────────────────────
 
+// Preferred auth: a Google service account, whose key never expires. Source A is the
+// GOOGLE_SERVICE_ACCOUNT_KEY env var (Netlify); source B is a google-credentials.json
+// file holding a service-account key (local). The calendars must be shared (read) with
+// the service account's client_email. Returns parsed creds or null if none configured.
+function getServiceAccountCreds() {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    try {
+      return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+    } catch (e) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is set but not valid JSON: ' + e.message)
+    }
+  }
+  const p = join(ROOT, 'google-credentials.json')
+  if (existsSync(p)) {
+    const raw = JSON.parse(readFileSync(p, 'utf-8'))
+    if (raw.type === 'service_account') return raw
+  }
+  return null
+}
+
 function createClient() {
+  // Service account first (never expires). Falls back to the legacy personal-OAuth
+  // token only if no service account is configured, so existing setups keep working.
+  const sa = getServiceAccountCreds()
+  if (sa) {
+    const auth = new google.auth.GoogleAuth({
+      credentials: sa,
+      scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
+    })
+    return google.calendar({ version: 'v3', auth })
+  }
+
   const { clientId, clientSecret } = getClientSecrets()
   const token = getToken()
   const auth = new google.auth.OAuth2(clientId, clientSecret)

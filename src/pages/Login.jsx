@@ -326,10 +326,9 @@ export default function Login() {
             style={styles.consentBox}
           />
           <span style={styles.consentText}>
-            By checking this box, I agree to receive text messages from Recovery Cafe
-            San Jose — mainly one-time login codes and occasional account messages.
-            Message frequency varies. Message and data rates may apply. Reply HELP for
-            help or STOP to unsubscribe at any time. See our{' '}
+            By checking this box, I agree to receive one-time login codes by text from
+            Recovery Cafe San Jose when I sign in, and nothing else. Message and data
+            rates may apply. See our{' '}
             <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.consentLink}>
               Terms of Service
             </a>{' '}and{' '}

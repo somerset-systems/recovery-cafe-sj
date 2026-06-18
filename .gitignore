@@ -4,6 +4,8 @@ dist/
 google-credentials.json
 .google-token.json
 google-credentials.json.json
+# Google service-account keys downloaded from Cloud Console
+recovery-cafe-sj-*.json
 
 # Local Netlify folder
 .netlify

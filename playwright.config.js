@@ -28,6 +28,12 @@ export default defineConfig({
     // exists. Vite gives actual env vars priority over .env files, so blanking
     // these keeps the suite on src/lib/fakeData.js (fake uuids like
     // "member-uuid-1" are invalid against a real Supabase and fail otherwise).
-    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
+    // Also pin SMS verification OFF so login uses the dev code "123456" — the
+    // suite can't receive a real text, and there's no functions server here.
+    env: {
+      VITE_SUPABASE_URL: '',
+      VITE_SUPABASE_ANON_KEY: '',
+      VITE_SMS_VERIFICATION_ENABLED: 'false',
+    },
   },
 })

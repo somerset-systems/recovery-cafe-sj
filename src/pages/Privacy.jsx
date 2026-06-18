@@ -63,10 +63,10 @@ export default function Privacy() {
         </Section>
 
         <Section title="SMS Messages">
-          Recovery Cafe SJ may send SMS (text) messages to your phone number for the sole
-          purpose of verifying your identity when you log in. These messages contain a one-time
-          code only. We will never send promotional or marketing messages. Message and data rates
-          may apply. You can opt out at any time by contacting staff.
+          Recovery Cafe SJ sends SMS (text) messages to your phone number for the sole
+          purpose of verifying your identity when you sign in. These messages contain a one-time
+          login code only. We never send marketing, promotional, or other account messages of any
+          kind. Message and data rates may apply. You can opt out at any time by contacting staff.
         </Section>
 
         <Section title="Data Sharing">

@@ -46,6 +46,27 @@ exports.handler = async function(event) {
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true }) }
     }
 
+    // Resend throttle. If a still-valid code was issued to this number very recently,
+    // don't generate a new one or send a second SMS — just report success. This makes
+    // double-taps and rapid retries cheap (one SMS, not many) and caps how fast any
+    // single real member's number can run up Twilio charges during a busy sign-up rush.
+    const RESEND_COOLDOWN_MS = 60 * 1000
+    const cutoff = new Date(Date.now() - RESEND_COOLDOWN_MS).toISOString()
+    const { data: recent } = await db
+      .from('verification_codes')
+      .select('id')
+      .eq('phone', phone)
+      .eq('used', false)
+      .gt('expires_at', new Date().toISOString())
+      .gt('created_at', cutoff)
+      .limit(1)
+      .maybeSingle()
+
+    if (recent) {
+      console.log(`[send-code] throttled resend for ...${phone.slice(-4)} (code still valid)`)
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true }) }
+    }
+
     // Generate code and expiry
     const code      = String(Math.floor(100000 + Math.random() * 900000))
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()

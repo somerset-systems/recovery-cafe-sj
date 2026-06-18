@@ -53,8 +53,10 @@ export default function Terms() {
 
         <Section title="SMS Messages">
           By using this app, you agree to receive SMS (text) messages from Recovery Cafe SJ for
-          the purpose of verifying your identity at login. These messages are sent only when you
-          initiate a login. Message and data rates may apply depending on your phone plan.
+          the purpose of verifying your identity at login. These messages contain a one-time login
+          code only and are sent only when you initiate a login. We never send marketing,
+          promotional, or other account messages. Message and data rates may apply depending on
+          your phone plan.
           <br /><br />
           To opt out of SMS messages, contact a Recovery Cafe SJ staff member or email{' '}
           <a
