@@ -44,7 +44,7 @@ Site → **Site configuration → Environment variables**. Add:
 | `VITE_SMS_VERIFICATION_ENABLED` | `true` |
 | `TWILIO_ACCOUNT_SID` | from Twilio console |
 | `TWILIO_AUTH_TOKEN` | from Twilio console |
-| `TWILIO_PHONE_NUMBER` | the approved number, E.164, e.g. `+18055494434` |
+| `TWILIO_PHONE_NUMBER` | the approved number in E.164 format, e.g. `+1XXXXXXXXXX` |
 | `VITE_SUPABASE_URL` | same as `.env` |
 | `VITE_SUPABASE_ANON_KEY` | same as `.env` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API (server-only) |
