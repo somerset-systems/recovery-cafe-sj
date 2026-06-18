@@ -67,6 +67,10 @@ export default function Profile() {
       >
         Sign Out
       </button>
+
+      <p style={{ margin: '14px 0 4px', textAlign: 'center', fontSize: fontSize.small, color: colors.textMedium }}>
+        Powered by Somerset Systems
+      </p>
     </div>
   )
 }
