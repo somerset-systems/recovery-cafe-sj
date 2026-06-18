@@ -535,10 +535,21 @@ function stripNicknames(s) {
     .trim()
 }
 
+// Manual name aliases for real people whose name differs between the main roster
+// and the phone/agency sheets in a way fuzzy matching can't safely catch (a
+// nickname, an initial, a maiden name, etc.). Both sides are normalizeName()
+// output — "first last", lowercased. Add an entry when staff confirm two names
+// are the same person. Applied everywhere a name is matched to a phone/ID.
+const NAME_ALIASES = {
+  'z waite': 'evgenia a waite', // "Z" is the diminutive of Evgenia — confirmed same person via email
+}
+
 // Find a phone number for a roster name using 7 strategies in priority order.
 // Returns { phone, strategy, matchedKey, confidence } or null.
 function findPhoneMatch(rosterName, phoneMap, nicknameMap) {
-  const normalized = normalizeName(rosterName)
+  const base = normalizeName(rosterName)
+  // Apply a manual alias first, so a confirmed same-person name maps cleanly.
+  const normalized = NAME_ALIASES[base] || base
 
   // Strategy 1: exact normalized match (also handles "Last, First" → "First Last")
   if (phoneMap.has(normalized)) {
@@ -964,6 +975,7 @@ async function runReal() {
   let clientIdsFound = 0, phonesFromAgency = 0
   let labelsUnparseable = 0, labelsPartial = 0   // circle-label quality counters
   let duplicatePhones = 0                          // rows whose phone was already used this run
+  let phoneChanges = 0                             // members whose phone changed (would orphan history)
   const memberIdByName = new Map()  // raw roster name → supabase member id
   const phoneOwner = new Map()      // normalized phone → first roster name that claimed it
   const skippedMembers = []         // raw roster names that had no phone match (for skip report)
@@ -976,6 +988,27 @@ async function runReal() {
   const now = new Date()
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const choreSnapshots = []  // [{ member_id, month, chores_done }]
+
+  // Snapshot of existing members keyed by their stable Agency client_id. We use this
+  // to spot a member whose PHONE changed in the sheet: the members upsert keys on
+  // phone, so a new number creates a brand-new row and orphans that member's
+  // attendance + chore history (their badges would reset). We can't safely auto-merge
+  // here (a wrong merge would blend two members), so we warn loudly and let staff fix
+  // it — either point the new number at the existing row, or re-key the table on
+  // client_id with a migration. Only Agency client_ids are stable enough to trust;
+  // row-number fallbacks are not, so we never match on those.
+  const existingByClientId = new Map()  // String(client_id) → { id, phone }
+  try {
+    const { data: existingMembers, error: exErr } = await supabase
+      .from('members')
+      .select('id, client_id, phone')
+    if (exErr) throw exErr
+    for (const m of existingMembers || []) {
+      if (m.client_id) existingByClientId.set(String(m.client_id), { id: m.id, phone: m.phone })
+    }
+  } catch (err) {
+    console.warn(`[member] could not load existing members for phone-change detection: ${err.message}`)
+  }
 
   console.log('\n--- Upserting members ---')
 
@@ -1030,11 +1063,26 @@ async function runReal() {
 
     // Client ID: prefer real Agency Data ID over row number
     let clientId = rowCol !== null ? (row[rowCol] || '') : ''
+    let clientIdFromAgency = false
     if (agencyClientIdMap.size > 0) {
       const agIdMatch = findPhoneMatch(name, agencyClientIdMap, nicknameMap)
       if (agIdMatch) {
         clientId = agIdMatch.phone  // findPhoneMatch returns map value in .phone field
+        clientIdFromAgency = true
         clientIdsFound++
+      }
+    }
+
+    // Phone-change guard: a member we already have (matched by stable Agency client_id)
+    // is arriving with a different phone. The upsert below keys on phone, so it would
+    // INSERT a new row and strand the old badge/attendance history. Warn, don't merge.
+    if (clientIdFromAgency) {
+      const prior = existingByClientId.get(String(clientId))
+      if (prior && prior.phone && prior.phone !== phone) {
+        phoneChanges++
+        console.warn(`[member] PHONE CHANGED for "${name}" (client_id ${clientId}): ${prior.phone} → ${phone}. ` +
+          `The members upsert keys on phone, so this creates a NEW row (id ${prior.id} keeps the history). ` +
+          `To preserve badges/attendance, update the phone on the existing row or re-key members on client_id.`)
       }
     }
     const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(rosterMatch?.matchedKey) || ''
@@ -1141,8 +1189,34 @@ async function runReal() {
   // the sync overwrites this month's row with the latest count (chores only climb
   // within a month, so this lands on the peak). Past months are left untouched.
   console.log('\n--- Upserting chore snapshots ---')
-  let choreMonthsUpserted = 0, choreMonthErrors = 0
+  let choreMonthsUpserted = 0, choreMonthErrors = 0, choreFloorsHeld = 0
   if (choreSnapshots.length > 0) {
+    // Monotonic guard: this month's snapshot must never DROP. Chores climb through a
+    // month, but if staff correct a count downward mid-month, blindly overwriting would
+    // lower the stored peak and could un-earn a badge the member already saw. Read the
+    // existing rows for this month and keep the higher of (existing, new) per member.
+    try {
+      const memberIds = choreSnapshots.map((s) => s.member_id)
+      const { data: priorChore, error: priorErr } = await supabase
+        .from('chore_months')
+        .select('member_id, chores_done')
+        .eq('month', currentMonth)
+        .in('member_id', memberIds)
+      if (priorErr) throw priorErr
+      const priorByMember = new Map((priorChore || []).map((r) => [r.member_id, r.chores_done]))
+      for (const s of choreSnapshots) {
+        const prev = priorByMember.get(s.member_id) ?? 0
+        if (prev > s.chores_done) {
+          choreFloorsHeld++
+          console.warn(`[chore_months] held floor for member ${s.member_id} in ${currentMonth}: ` +
+            `sheet shows ${s.chores_done}, keeping recorded peak ${prev} (badges never un-earn).`)
+          s.chores_done = prev
+        }
+      }
+    } catch (err) {
+      console.warn(`[chore_months] could not read existing snapshots to hold the peak: ${err.message} — proceeding with sheet values`)
+    }
+
     try {
       const { error } = await supabase
         .from('chore_months')
@@ -1158,8 +1232,9 @@ async function runReal() {
 
   console.log('\n=== Summary ===')
   console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone / bad data)`)
-  console.log(`Chore snapshots:     ${choreMonthsUpserted} upserted for ${currentMonth}${choreMonthErrors ? `, ${choreMonthErrors} failed` : ''}`)
+  console.log(`Chore snapshots:     ${choreMonthsUpserted} upserted for ${currentMonth}${choreFloorsHeld ? `, ${choreFloorsHeld} held at recorded peak` : ''}${choreMonthErrors ? `, ${choreMonthErrors} failed` : ''}`)
   console.log(`Duplicate phones:    ${duplicatePhones} row(s) shared a phone with an earlier row (later overwrote earlier)`)
+  console.log(`Phone changes:       ${phoneChanges} member(s) arrived with a new phone — history stays on the old row until staff reconcile (see warnings above)`)
   console.log(`Circle labels:       ${labelsUnparseable} unparseable, ${labelsPartial} partial (some fields blank)`)
   console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceMalformed} malformed cells (stored as not_enrolled), ${attendanceErrors} write errors`)
   console.log(`Client IDs updated:  ${clientIdsFound} from Agency Data${clientIdsFound < membersUpserted ? ` (${membersUpserted - clientIdsFound} fell back to row number)` : ''}`)
