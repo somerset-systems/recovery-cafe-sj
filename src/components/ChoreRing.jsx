@@ -48,7 +48,7 @@ export default function ChoreRing({ value = 0, goal = 3, size = 260 }) {
     return () => cancelAnimationFrame(raf)
   }, [value])
 
-  const centreColor = allClosed ? '#C9982E' : value >= goal ? colors.primaryGreen : colors.textDark
+  const centreColor = allClosed ? colors.gold : value >= goal ? colors.primaryGreen : colors.textDark
   // Centre number scales with the frame so it stays nicely sized at any ring count.
   const numFont = Math.min(64, half * 0.78)
 

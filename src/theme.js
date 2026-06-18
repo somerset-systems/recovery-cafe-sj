@@ -5,7 +5,7 @@ export const colors = {
   card: '#FFFFFF',
 
   tagEvent: '#2D6A4F',
-  tagClass: '#2A7F7F',
+  tagClass: '#247070', // deepened from #2A7F7F (4.09:1) → 5.01:1 on its tint
   tagMusic: '#6B4F8C',
   tagSchool: '#1E3A5F',
 
@@ -16,17 +16,23 @@ export const colors = {
 
   textDark: '#1A1A1A',
   textMedium: '#555555',
-  textLight: '#888888',
+  // Used as real (small) text — section labels, hints, footnotes, event date blocks.
+  // #6B6B6B clears WCAG AA on both white (5.33:1) and the cream date blocks (4.87:1);
+  // the old #888888 was only 3.5:1 / 3.2:1 and failed for low-vision members.
+  textLight: '#6B6B6B',
 
-  chipAttended: '#2D6A4F',
-  chipMissed: '#C1440E',
-  chipExcused: '#B8860B',
-  chipNotYet: '#888888',
+  // Chip backgrounds carry white text at 13px bold, so each needs ≥4.5:1 against white.
+  chipAttended: '#2D6A4F', // 6.39:1
+  chipMissed: '#C1440E',   // 5.12:1
+  chipExcused: '#996A00',  // was #B8860B (3.25:1) → 4.76:1
+  chipNotYet: '#717171',   // was #888888 (3.54:1) → 4.88:1
 
   danger: '#C1440E',
   dangerBg: '#FDF1EC', // light tint behind danger-colored text; danger on this = 4.63:1 (AA)
   white: '#FFFFFF',
   border: '#E0DAD3',
+  gold: '#C9982E',         // top-tier accent: gold ring + the centre number once all rings close
+  lockedBadge: '#ECE7DF',  // muted cream disc behind a badge that isn't earned yet
 
   // Chore "rings": the green goal ring is the innermost; every tier beyond it is a
   // concentric outer ring in a complementary colour (see lib/choreRings.js +

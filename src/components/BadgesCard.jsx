@@ -4,7 +4,7 @@ import SectionLabel from './SectionLabel.jsx'
 import { evaluateBadges } from '../lib/badges.js'
 import { colors, fontSize } from '../theme.js'
 
-const LOCKED_BG = '#ECE7DF' // muted cream for badges not yet earned
+const LOCKED_BG = colors.lockedBadge // muted cream for badges not yet earned
 
 // Lighten a hex colour toward white by `amt` (0..1) — used for the soft gradient
 // behind a celebrated badge so it glows without a CSS file.
@@ -281,7 +281,8 @@ export default function BadgesCard({ member, attendance = [], choreMonths = [], 
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <SectionLabel label="Your Badges" />
-        <span style={{ fontSize: fontSize.body, fontWeight: 700, color: colors.accentGreen }}>
+        {/* primaryGreen (6.4:1), not accentGreen (#52B788 = 2.47:1, fails WCAG AA) */}
+        <span style={{ fontSize: fontSize.body, fontWeight: 700, color: colors.primaryGreen }}>
           {earnedCount} of {badges.length}
         </span>
       </div>
