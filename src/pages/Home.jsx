@@ -4,7 +4,8 @@ import { useMember } from '../hooks/useMember.js'
 import { fetchAllEvents, fetchCircleLocation } from '../lib/googleCalendar.js'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
-import ProgressRing from '../components/ProgressRing.jsx'
+import ChoreRing from '../components/ChoreRing.jsx'
+import { getRings, choreStatusMessage } from '../lib/choreRings.js'
 import { colors, fontSize } from '../theme.js'
 
 const TAG_STYLES = {
@@ -28,14 +29,13 @@ function parseTimeMinutes(timeStr) {
   return h * 60 + min
 }
 
-// Returns { dayName, events[] } for the next date within 7 days that has events, or null.
+// Returns { dayName, events[] } for the next upcoming date that has events, or null.
+// No artificial 7-day cap: fetchAllEvents already scopes to the next ~30 days, and
+// capping here made Home say "no events" while the Events tab clearly listed some.
 function findNextDayEvents(events) {
   const todayStr = new Date().toISOString().slice(0, 10)
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() + 7)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
 
-  const upcoming = events.filter(e => e.event_date >= todayStr && e.event_date <= cutoffStr)
+  const upcoming = events.filter(e => e.event_date >= todayStr)
   if (!upcoming.length) return null
 
   const nextDate = upcoming.reduce((min, e) => (e.event_date < min ? e.event_date : min), upcoming[0].event_date)
@@ -73,8 +73,17 @@ export default function Home() {
   if (memberError)   return <ErrorScreen message={memberError} />
   if (!member)       return <ErrorScreen message="Could not load your profile." />
 
-  const celebrating = member.chores_done >= member.chores_goal
+  const ring = getRings(member.chores_done)
+  const celebrating = member.chores_done >= member.chores_goal || !!ring.justClosed || ring.allClosed
   const upcomingLabel = nextDayData ? `Coming Up — ${nextDayData.dayName}` : 'Coming Up'
+
+  function goToChores(e) {
+    // Keyboard activation: Enter/Space behave like the click. Plain div cards
+    // aren't focusable, so this card opts in via role/tabIndex below.
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return
+    if (e.type === 'keydown') e.preventDefault()
+    navigate('/chores')
+  }
 
   return (
     <div
@@ -102,17 +111,37 @@ export default function Home() {
         )}
       </Card>
 
-      {/* Chores Card */}
-      <Card style={{ cursor: 'pointer' }} onClick={() => navigate('/chores')}>
+      {/* Chores Card — compact ChoreRing mirrors the Chores tab so the signature
+          element reads the same everywhere; full detail lives one tap deeper. */}
+      <Card
+        role="button"
+        tabIndex={0}
+        aria-label="View your chores"
+        style={{ cursor: 'pointer' }}
+        onClick={goToChores}
+        onKeyDown={goToChores}
+      >
         <SectionLabel label="Chores" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-          <ProgressRing value={member.chores_done} goal={member.chores_goal} size={88} celebrating={celebrating} />
-          <div>
+          <div style={{ width: 92, flexShrink: 0 }}>
+            <ChoreRing value={member.chores_done} goal={member.chores_goal} size={92} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: '0 0 4px 0', fontSize: fontSize.large, fontWeight: 700, color: colors.textDark }}>
-              {celebrating ? 'Goal reached! 🎉' : `${member.chores_done} of ${member.chores_goal} done`}
+              {member.chores_done < member.chores_goal
+                ? `${member.chores_done} of ${member.chores_goal} done`
+                : `${member.chores_done} chores this month`}
             </p>
-            <p style={{ margin: 0, fontSize: fontSize.body, color: colors.textMedium }}>
-              {celebrating ? 'Amazing work this month!' : 'Tap to see details'}
+            <p
+              style={{
+                margin: 0,
+                fontSize: fontSize.body,
+                color: celebrating ? (ring.activeColor || colors.accentGreen) : colors.textMedium,
+                fontWeight: celebrating ? 600 : 400,
+                lineHeight: 1.4,
+              }}
+            >
+              {choreStatusMessage(member.chores_done, member.chores_goal, ring)}
             </p>
           </div>
         </div>
@@ -130,7 +159,7 @@ export default function Home() {
         )}
         {!eventsLoading && !eventsError && !nextDayData && (
           <p style={{ margin: 0, color: colors.textMedium, fontSize: fontSize.body }}>
-            No upcoming events this week.
+            No upcoming events right now.
           </p>
         )}
         {nextDayData && (
@@ -181,18 +210,18 @@ function DayEventList({ data, navigate }) {
         <button
           onClick={() => navigate('/events')}
           style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
+            width: '100%',
+            height: 44,
+            borderRadius: 10,
+            border: `1.5px solid ${colors.border}`,
+            background: 'transparent',
             color: colors.primaryGreen,
             fontSize: fontSize.body,
             fontWeight: 600,
             cursor: 'pointer',
-            textAlign: 'left',
-            textDecoration: 'underline',
           }}
         >
-          View all {data.events.length} events →
+          View all {data.events.length} events
         </button>
       )}
     </div>

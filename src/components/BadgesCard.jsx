@@ -16,6 +16,43 @@ function lighten(hex, amt) {
   return `rgb(${r}, ${g}, ${b})`
 }
 
+// ── Contrast-safe banner background ─────────────────────────────────────────────
+// The celebration banner carries white text, so its background must clear WCAG AA
+// (≥4.5:1) for EVERY badge hue — including the light ones (gold, teal, rose) where
+// plain white-on-colour failed badly. We deepen the badge colour until white text
+// is safely readable, then build a subtle dark→darker gradient from it. The badge's
+// own colour still shows through the glow, so identity is preserved.
+function rgbParts(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+function relLuminance(r, g, b) {
+  const f = (v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+function whiteContrast(r, g, b) {
+  return 1.05 / (relLuminance(r, g, b) + 0.05)
+}
+function scale(r, g, b, factor) {
+  return [Math.round(r * factor), Math.round(g * factor), Math.round(b * factor)]
+}
+// Returns a `linear-gradient(...)` string whose lightest point still clears ~4.6:1
+// against white. We darken the hue until the (lighter) top stop is safe, then the
+// bottom stop is darker still, so the whole banner is readable.
+function safeWhiteGradient(hex) {
+  let [r, g, b] = rgbParts(hex)
+  let guard = 0
+  while (whiteContrast(r, g, b) < 4.6 && guard++ < 24) {
+    ;[r, g, b] = scale(r, g, b, 0.92)
+  }
+  const top = `rgb(${r}, ${g}, ${b})`
+  const [dr, dg, db] = scale(r, g, b, 0.82)
+  return `linear-gradient(135deg, ${top}, rgb(${dr}, ${dg}, ${db}))`
+}
+
 // One badge in the wall: a tappable coloured emoji disc + its name. Earned badges
 // glow in their own colour; locked ones are quietly greyed so the wall reads as
 // progress, never as failure. Tapping reveals the badge's meaning below the wall.
@@ -82,7 +119,7 @@ function BadgeTile({ badge, selected, onSelect }) {
               boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
             }}
           >
-            ×{count}
+            {count}
           </span>
         )}
       </div>
@@ -172,7 +209,7 @@ function CelebrationBanner({ badge, onDone }) {
         borderRadius: 16,
         padding: '16px 18px',
         marginBottom: 16,
-        background: `linear-gradient(135deg, ${badge.color}, ${lighten(badge.color, 0.28)})`,
+        background: safeWhiteGradient(badge.color),
         boxShadow: `0 4px 16px ${badge.color}55`,
         display: 'flex',
         alignItems: 'center',

@@ -2,19 +2,8 @@ import { useMember } from '../hooks/useMember.js'
 import ChoreRing from '../components/ChoreRing.jsx'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
-import { getRings } from '../lib/choreRings.js'
+import { getRings, choreStatusMessage } from '../lib/choreRings.js'
 import { colors, fontSize } from '../theme.js'
-
-// Plain-language progress line. Below the goal it nudges; at and beyond it, it
-// names exactly how many chores close the ring they're working on.
-function statusMessage(done, goal, ring) {
-  if (done === 0) return 'Sign up for chores at the front desk'
-  if (done < goal) return "Keep going, you're almost there!"
-  if (ring.allClosed) return 'You closed every ring this month — incredible! 🎉'
-  if (ring.justClosed) return `You closed your ${ring.justClosed.name} ring! 🎉`
-  const n = ring.remaining
-  return `${n} more ${n === 1 ? 'chore' : 'chores'} to close your ${ring.activeName} ring!`
-}
 
 export default function Chores() {
   const { member, loading, error } = useMember()
@@ -78,7 +67,7 @@ export default function Chores() {
             lineHeight: 1.4,
           }}
         >
-          {statusMessage(done, goal, ring)}
+          {choreStatusMessage(done, goal, ring)}
         </p>
       </Card>
     </div>

@@ -42,6 +42,13 @@ function displayPhone(digits) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
 
+// The code is entered left-to-right: focus belongs on the first empty box. If every
+// box is full we keep the last one focusable so a member can still correct a digit.
+function firstEmptyIndex(arr) {
+  const i = arr.findIndex(c => c === '')
+  return i === -1 ? arr.length - 1 : i
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Login() {
@@ -138,6 +145,13 @@ export default function Login() {
     if (e.key === 'Backspace' && !code[i] && i > 0) {
       codeRef.current[i - 1]?.focus()
     }
+  }
+
+  // Tapping ahead to a still-empty box jumps focus back to the first gap, so the
+  // code always fills in order. Editing an already-filled earlier box stays allowed.
+  function handleCodeFocus(i) {
+    const target = firstEmptyIndex(code)
+    if (i > target) codeRef.current[target]?.focus()
   }
 
   function handleCodePaste(e) {
@@ -255,9 +269,11 @@ export default function Login() {
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
+                autoFocus={i === 0}
                 value={digit}
                 onChange={e => handleCodeChange(i, e.target.value)}
                 onKeyDown={e => handleCodeKeyDown(i, e)}
+                onFocus={() => handleCodeFocus(i)}
                 onPaste={i === 0 ? handleCodePaste : undefined}
                 style={{
                   width: 46,
@@ -269,7 +285,6 @@ export default function Login() {
                   color: colors.textDark,
                   background: colors.white,
                   textAlign: 'center',
-                  outline: 'none',
                   flexShrink: 0,
                   transition: 'border-color 0.15s',
                 }}
@@ -341,7 +356,7 @@ export default function Login() {
         {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
         <button type="submit" disabled={loading} style={primaryBtn(loading)}>
-          {loading ? 'Looking up…' : 'Yes, sign me up!'}
+          {loading ? 'Sending…' : 'Send my code'}
         </button>
       </form>
     </Wrap>
@@ -424,7 +439,6 @@ const styles = {
     fontSize: fontSize.large,
     color: colors.textDark,
     background: colors.white,
-    outline: 'none',
     boxSizing: 'border-box',
     width: '100%',
     textAlign: 'center',

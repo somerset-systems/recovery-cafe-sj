@@ -41,3 +41,16 @@ export function getRings(done = 0) {
     total,
   }
 }
+
+// Plain-language progress line, shared by the Chores tab and the Home summary card
+// so the two never drift. Below the goal it nudges; at and beyond it, it names
+// exactly how many chores close the ring the member is working on. `ring` is a
+// getRings() result.
+export function choreStatusMessage(done, goal, ring) {
+  if (done === 0) return 'Sign up for chores at the front desk'
+  if (done < goal) return "Keep going, you're almost there!"
+  if (ring.allClosed) return 'You closed every ring this month — incredible! 🎉'
+  if (ring.justClosed) return `You closed your ${ring.justClosed.name} ring! 🎉`
+  const n = ring.remaining
+  return `${n} more ${n === 1 ? 'chore' : 'chores'} to close your ${ring.activeName} ring!`
+}
