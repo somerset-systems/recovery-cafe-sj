@@ -28,9 +28,11 @@ export const colors = {
   white: '#FFFFFF',
   border: '#E0DAD3',
 
-  // Extra-credit badge for chores beyond the 3/month goal — a warm "gold star".
-  extraCredit: '#7A5A00',   // deep gold text; 5.6:1 on extraCreditBg (AA)
-  extraCreditBg: '#FBF0D5', // soft gold tint
+  // Chore "crown": each chore beyond the 3/month goal adds a star around the ring.
+  // Successive crown layers deepen warm-gold to amber so higher counts read richer.
+  crownGold1: '#F4B400', // first layer  (4–15 chores)
+  crownGold2: '#E0950B', // second layer (16–27)
+  crownGold3: '#C98A0A', // third layer  (28+)
 }
 
 export const fontSize = {

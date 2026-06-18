@@ -11,10 +11,22 @@ style.textContent = `
   input { font-family: inherit; }
   a, a:link, a:visited, a:any-link { color: inherit !important; text-decoration: none !important; }
 
-  /* Chores extra-credit badge: a gentle gold-star pop after the ring fills. */
-  @keyframes extraCreditPop {
-    from { opacity: 0; transform: translateY(8px) scale(0.92); }
-    to   { opacity: 1; transform: translateY(0)   scale(1); }
+  /* Chore crown: each star pops in (staggered) after the ring fills, then drifts
+     in a soft idle twinkle. The newest star lands a touch bigger and brighter. */
+  .crown-star {
+    opacity: 0;
+    animation:
+      crownStarIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both,
+      crownTwinkle 3.6s ease-in-out 1.6s infinite;
+  }
+  .crown-star-newest { filter: drop-shadow(0 0 3px rgba(244, 180, 0, 0.65)); }
+  @keyframes crownStarIn {
+    from { opacity: 0; transform: scale(0) rotate(-40deg); }
+    to   { opacity: 1; transform: scale(1) rotate(0deg); }
+  }
+  @keyframes crownTwinkle {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.72; }
   }
 
   /* Honor reduced-motion everywhere: snap animations/transitions to their end state. */

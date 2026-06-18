@@ -1,5 +1,5 @@
 import { useMember } from '../hooks/useMember.js'
-import ProgressRing from '../components/ProgressRing.jsx'
+import ChoreRing from '../components/ChoreRing.jsx'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import { colors, fontSize } from '../theme.js'
@@ -47,12 +47,9 @@ export default function Chores() {
           <SectionLabel label="Your Chores This Month" />
         </div>
 
-        <ProgressRing
-          value={done}
-          goal={goal}
-          size={200}
-          celebrating={celebrating}
-        />
+        <div style={{ width: '100%', maxWidth: 240 }}>
+          <ChoreRing value={done} goal={goal} size={240} />
+        </div>
 
         <p
           style={{
@@ -78,27 +75,6 @@ export default function Chores() {
         >
           {statusMessage(done, goal)}
         </p>
-
-        {extra > 0 && (
-          <div
-            style={{
-              marginTop: 18,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              background: colors.extraCreditBg,
-              color: colors.extraCredit,
-              borderRadius: 999,
-              padding: '9px 18px',
-              fontSize: fontSize.medium,
-              fontWeight: 700,
-              animation: 'extraCreditPop 0.45s 0.5s cubic-bezier(0.22, 1, 0.36, 1) both',
-            }}
-          >
-            <span aria-hidden="true">🌟</span>
-            Extra credit · +{extra}
-          </div>
-        )}
       </Card>
     </div>
   )
