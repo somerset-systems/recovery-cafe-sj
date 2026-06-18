@@ -67,6 +67,10 @@ export default function Login() {
   // "tap-through": the synthesized click after tapping "Use a different number"
   // can land on this screen's submit button and instantly re-submit.
   const returnedToPhoneAt = useRef(0)
+  // True while we're programmatically advancing focus after a keystroke, so the
+  // onFocus redirect below doesn't fight the auto-advance (its `code` is stale
+  // mid-keystroke and would otherwise bounce focus back to the box just typed).
+  const autoAdvancing = useRef(false)
 
   // Lift lockout when the 10-minute window expires naturally
   useEffect(() => {
@@ -152,7 +156,13 @@ export default function Login() {
       const next = [...code]
       next[target] = char
       setCode(next)
-      if (target < 5) codeRef.current[target + 1]?.focus()
+      if (target < 5) {
+        // Guard the redirect: the onFocus handler still sees the pre-keystroke
+        // `code` and would otherwise pull focus back to `target`.
+        autoAdvancing.current = true
+        codeRef.current[target + 1]?.focus()
+        autoAdvancing.current = false
+      }
       return
     }
 
@@ -173,6 +183,7 @@ export default function Login() {
   // Tapping ahead to a still-empty box jumps focus back to the first gap, so the
   // code always fills in order. Editing an already-filled earlier box stays allowed.
   function handleCodeFocus(i) {
+    if (autoAdvancing.current) return
     const target = firstEmptyIndex(code)
     if (i > target) codeRef.current[target]?.focus()
   }
