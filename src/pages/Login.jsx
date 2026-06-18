@@ -63,6 +63,10 @@ export default function Login() {
   const [lockedOut, setLockedOut]        = useState(() => lockoutRemaining() > 0)
   const navigate = useNavigate()
   const codeRef  = useRef([])
+  // Timestamp of the last return to the phone screen. Used to swallow the mobile
+  // "tap-through": the synthesized click after tapping "Use a different number"
+  // can land on this screen's submit button and instantly re-submit.
+  const returnedToPhoneAt = useRef(0)
 
   // Lift lockout when the 10-minute window expires naturally
   useEffect(() => {
@@ -83,6 +87,10 @@ export default function Login() {
   async function handlePhoneSubmit(e) {
     e.preventDefault()
     if (lockedOut) return
+
+    // Swallow the phantom submit from a "Use a different number" tap-through (the
+    // synthesized click that lands here right after the code screen unmounts).
+    if (Date.now() - returnedToPhoneAt.current < 700) return
 
     const normalized = normalizePhone(phone)
     if (normalized.length !== 10) {
@@ -134,11 +142,26 @@ export default function Login() {
 
   function handleCodeChange(i, value) {
     const char = value.replace(/\D/g, '').slice(-1)
-    const next = [...code]
-    next[i] = char
-    setCode(next)
     setErrorMsg('')
-    if (char && i < 5) codeRef.current[i + 1]?.focus()
+
+    if (char) {
+      // Always fill the first empty box, regardless of which box the member tapped.
+      // A focus() redirect from onFocus isn't honored reliably on mobile, so we
+      // enforce left-to-right fill order in the data here instead.
+      const target = firstEmptyIndex(code)
+      const next = [...code]
+      next[target] = char
+      setCode(next)
+      if (target < 5) codeRef.current[target + 1]?.focus()
+      return
+    }
+
+    // Empty value = the member cleared the digit in the box they're editing.
+    if (code[i]) {
+      const next = [...code]
+      next[i] = ''
+      setCode(next)
+    }
   }
 
   function handleCodeKeyDown(i, e) {
@@ -208,6 +231,7 @@ export default function Login() {
   }
 
   function backToPhone() {
+    returnedToPhoneAt.current = Date.now()
     setPhase('phone')
     setCode(['', '', '', '', '', ''])
     setErrorMsg('')
