@@ -103,18 +103,43 @@ function inferTag(summary) {
 
 // ── Item parser ───────────────────────────────────────────────────────────────
 
+// The cafe is in San Jose — always render dates/times in Pacific time, regardless
+// of the server's timezone. Netlify functions run in UTC, so without an explicit
+// timeZone every time came out 7-8 hours off.
+const TZ = 'America/Los_Angeles'
+
 function formatTime(dateTimeStr) {
-  return new Date(dateTimeStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return new Date(dateTimeStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TZ })
+}
+
+// "10:30 – 11:30 AM" (full length). When start and end share AM/PM we drop the
+// first one for compactness; a missing end falls back to just the start time.
+function formatTimeRange(startStr, endStr) {
+  const start = formatTime(startStr)
+  if (!endStr) return start
+  const end = formatTime(endStr)
+  const sameMeridiem = start.slice(-2) === end.slice(-2)
+  const startLabel = sameMeridiem ? start.replace(/\s*[AP]M$/, '') : start
+  return `${startLabel} – ${end}`
+}
+
+// Calendar date (YYYY-MM-DD) in Pacific time. en-CA formats as YYYY-MM-DD.
+function dateInTZ(dateTimeStr) {
+  return new Date(dateTimeStr).toLocaleDateString('en-CA', { timeZone: TZ })
 }
 
 function parseItem(item, tag) {
+  // Timed events have start.dateTime; all-day events have start.date (a plain
+  // YYYY-MM-DD with no time/zone, which must NOT be timezone-shifted).
+  const hasTime  = !!(item.start && item.start.dateTime)
   const startRaw = item.start && (item.start.dateTime || item.start.date)
+  const endRaw   = item.end && (item.end.dateTime || item.end.date)
   const d = new Date(startRaw)
   return {
     id:         item.id,
     title:      item.summary || 'Event',
-    event_date: d.toISOString().slice(0, 10),
-    event_time: item.start && item.start.dateTime ? formatTime(item.start.dateTime) : null,
+    event_date: hasTime ? dateInTZ(item.start.dateTime) : startRaw.slice(0, 10),
+    event_time: hasTime ? formatTimeRange(item.start.dateTime, endRaw) : null,
     _ms:        d.getTime(),
     location:   item.location || null,
     tag,
