@@ -39,6 +39,17 @@ export default function Header({ memberName }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span
           style={{
+            color: 'rgba(255,255,255,0.75)',
+            fontSize: fontSize.small,
+            fontWeight: 600,
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+          }}
+        >
+          Welcome Back
+        </span>
+        <span
+          style={{
             color: colors.white,
             fontSize: fontSize.xxlarge,
             fontWeight: 800,
