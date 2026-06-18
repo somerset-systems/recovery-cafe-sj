@@ -4,23 +4,23 @@ import { getRings } from './choreRings.js'
  * Badges — celebratory milestones a member earns. Everything here is *additive*
  * and *durable*: a badge is earned the first time its goal is ever met and stays
  * earned forever — it never resets at the start of a month and is never taken
- * away. Missing a week never produces a negative badge. This matters for our
- * members.
+ * away. Missing a week never produces a negative badge, and no badge rewards
+ * missing circle. This matters for our members.
  *
- * Durability comes from history, not from the single live `chores_done` value:
- *   - Chore-ring badges derive from a per-month chore snapshot (`chore_months`,
- *     written by the sync script). A ring badge is earned once any month reached
- *     its threshold, and it tracks HOW MANY months closed that ring — so a
- *     member who has closed their teal ring five different months sees "×5".
- *   - Attendance badges derive from the attendance history, which already spans
- *     every week the program has tracked.
+ * Durability comes from history, not the single live `chores_done` value:
+ *   - Chore badges derive from a per-month chore snapshot (`chore_months`,
+ *     written by the sync). Ring badges count HOW MANY months a ring was closed;
+ *     streak/consistency badges look at consecutive months; lifetime badges sum
+ *     every month.
+ *   - Attendance badges derive from the attendance history, which spans every
+ *     week the program has tracked.
  *
  * evaluateBadges() is a pure function so it's easy to test and could run
  * server-side later if we ever want to store earned badges.
  */
 
 // Cumulative chore counts at which each ring closes (see theme.js choreRings).
-// 'times' badges count how many separate months reached the threshold.
+// 'countable' badges show how many separate months reached the threshold.
 const RING_BADGES = [
   { key: 'first-sprout', emoji: '🌱', name: 'First Sprout', threshold: 1, countable: false,
     requirement: 'Do your first chore', color: '#52B788' },
@@ -41,11 +41,11 @@ const RING_BADGES = [
 ]
 
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const monthNum = (m) => { const [y, mm] = m.split('-').map(Number); return y * 12 + (mm - 1) }
 
-// Collapse the chore snapshot into one peak count per month, then fold in the
-// member's *current* live chores so the badge updates the moment they cross a
-// threshold today — before the next nightly sync has snapshotted the month.
-function monthlyChoreCounts(member, choreMonths = []) {
+// Collapse the chore snapshot into one peak count per month, fold in the live
+// current month, and return entries sorted oldest→newest: [{ month, count }].
+function monthlyChoreEntries(member, choreMonths = []) {
   const byMonth = new Map()
   for (const r of choreMonths) {
     if (!r || !r.month) continue
@@ -53,9 +53,26 @@ function monthlyChoreCounts(member, choreMonths = []) {
     byMonth.set(r.month, Math.max(byMonth.get(r.month) || 0, v))
   }
   const cur = monthKey(new Date())
-  const liveDone = Math.max(0, member?.chores_done ?? 0)
-  byMonth.set(cur, Math.max(byMonth.get(cur) || 0, liveDone))
-  return [...byMonth.values()]
+  byMonth.set(cur, Math.max(byMonth.get(cur) || 0, Math.max(0, member?.chores_done ?? 0)))
+  return [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, count]) => ({ month, count }))
+}
+
+// Longest run of calendar-consecutive months whose count satisfies `pred`.
+// A missing month (a gap in the calendar) breaks the run.
+function longestConsecutiveMonths(entries, pred) {
+  let best = 0, run = 0, prevNum = null, prevOk = false
+  for (const { month, count } of entries) {
+    const num = monthNum(month)
+    const ok = pred(count)
+    if (ok) run = prevOk && prevNum !== null && num - prevNum === 1 ? run + 1 : 1
+    else run = 0
+    if (run > best) best = run
+    prevNum = num
+    prevOk = ok
+  }
+  return best
 }
 
 // Walk attendance once. Forgiving by design: only an 'absent' breaks a streak;
@@ -88,13 +105,14 @@ function summarizeAttendance(records = []) {
     // 'excused' / 'not_enrolled' / blank: neutral — leave streak untouched.
   }
 
-  // A "perfect month" is a calendar month with at least 3 circles attended and
-  // no absences (excused is fine — life happens).
-  const perfectMonths = Object.values(months).filter(
-    (m) => m.attended >= 3 && m.absent === 0
-  ).length
+  // A "perfect month" is a calendar month with 3+ circles attended and no absence.
+  const perfectMonthSet = new Set(
+    Object.entries(months)
+      .filter(([, m]) => m.attended >= 3 && m.absent === 0)
+      .map(([k]) => k)
+  )
 
-  return { attended, longestStreak, comeback, perfectMonths }
+  return { attended, longestStreak, comeback, perfectMonthSet }
 }
 
 /**
@@ -103,34 +121,70 @@ function summarizeAttendance(records = []) {
  * `count` is how many times the milestone was reached (for countable badges).
  */
 export function evaluateBadges(member, { attendance = [], choreMonths = [] } = {}) {
-  const counts = monthlyChoreCounts(member, choreMonths)
+  // --- Chore-derived facts ---
+  const entries = monthlyChoreEntries(member, choreMonths)
+  const counts = entries.map((e) => e.count)
+  const totalChores = counts.reduce((a, b) => a + b, 0)
+  const goalStreak = longestConsecutiveMonths(entries, (c) => c >= 3)
+  const steadyStreak = longestConsecutiveMonths(entries, (c) => c >= 1)
+  const goalMonths = new Set(entries.filter((e) => e.count >= 3).map((e) => e.month))
 
-  const choreBadges = RING_BADGES.map((b) => {
+  const ringBadges = RING_BADGES.map((b) => {
     const count = counts.filter((c) => c >= b.threshold).length
     return { ...b, category: 'chores', earned: count > 0, count }
   })
 
+  const consistencyBadges = [
+    { key: 'steady-hands', emoji: '🤲', name: 'Steady Hands', color: '#52B788',
+      requirement: 'Do at least one chore every month for 3 months in a row',
+      earned: steadyStreak >= 3 },
+    { key: 'goal-streak', emoji: '📈', name: 'Goal Streak', color: '#2D6A4F',
+      requirement: 'Hit your 3-chore goal 3 months in a row',
+      earned: goalStreak >= 3 },
+    { key: 'hundred-chores', emoji: '💯', name: 'Hundred Chores', color: '#C9982E',
+      requirement: 'Do 100 chores all-time',
+      earned: totalChores >= 100 },
+  ].map((b) => ({ ...b, category: 'chores', count: 0 }))
+
+  // --- Attendance-derived facts ---
   const att = summarizeAttendance(attendance)
+  const bothHandsCount = [...goalMonths].filter((m) => att.perfectMonthSet.has(m)).length
+
   const attendanceBadges = [
     { key: 'welcome', emoji: '🤝', name: 'Welcome to the Circle', color: '#2D6A4F',
-      requirement: 'Attend your first circle', earned: att.attended >= 1, count: 0 },
+      requirement: 'Attend your first circle', earned: att.attended >= 1 },
     { key: 'finding-feet', emoji: '👣', name: 'Finding Your Feet', color: '#52B788',
-      requirement: 'Attend 3 circles', earned: att.attended >= 3, count: 0 },
+      requirement: 'Attend 3 circles', earned: att.attended >= 3 },
     { key: 'on-a-roll', emoji: '🔥', name: 'On a Roll', color: '#C1440E',
-      requirement: 'Attend 5 circles in a row', earned: att.longestStreak >= 5, count: 0 },
-    { key: 'comeback', emoji: '💚', name: 'Comeback', color: '#2A8C8C',
-      requirement: 'Come back to circle after missing one', earned: att.comeback, count: 0 },
+      requirement: 'Attend 5 circles in a row', earned: att.longestStreak >= 5 },
+    { key: 'unstoppable', emoji: '🚀', name: 'Unstoppable', color: '#D4631F',
+      requirement: 'Attend 10 circles in a row', earned: att.longestStreak >= 10 },
+    // hideFromNextUp: Comeback is a lovely reward for returning, but we never list
+    // it as a goal to chase — that would amount to suggesting a member miss a circle.
+    { key: 'comeback', emoji: '💚', name: 'Comeback', color: '#2A8C8C', hideFromNextUp: true,
+      requirement: 'Come back to circle after missing one', earned: att.comeback },
     { key: 'perfect-month', emoji: '⭐', name: 'Perfect Month', color: '#C9982E', countable: true,
-      requirement: 'Attend every circle in one month', earned: att.perfectMonths >= 1, count: att.perfectMonths },
+      requirement: 'Attend every circle in one month', earned: att.perfectMonthSet.size >= 1, count: att.perfectMonthSet.size },
+    { key: 'three-perfect-months', emoji: '🌟', name: 'Three Perfect Months', color: '#B8860B',
+      requirement: 'Have a perfect month three times', earned: att.perfectMonthSet.size >= 3 },
     { key: 'ten-circles', emoji: '🌳', name: 'Ten Circles', color: '#3E6CA6',
-      requirement: 'Attend 10 circles', earned: att.attended >= 10, count: 0 },
+      requirement: 'Attend 10 circles', earned: att.attended >= 10 },
     { key: 'twentyfive-circles', emoji: '🏅', name: 'Twenty-Five Circles', color: '#6B5BB0',
-      requirement: 'Attend 25 circles', earned: att.attended >= 25, count: 0 },
+      requirement: 'Attend 25 circles', earned: att.attended >= 25 },
     { key: 'fifty-circles', emoji: '🏆', name: 'Fifty Circles', color: '#9E4E88',
-      requirement: 'Attend 50 circles', earned: att.attended >= 50, count: 0 },
+      requirement: 'Attend 50 circles', earned: att.attended >= 50 },
+    { key: 'seventyfive-circles', emoji: '🎖️', name: 'Seventy-Five Circles', color: '#B5495B',
+      requirement: 'Attend 75 circles', earned: att.attended >= 75 },
     { key: 'hundred-circles', emoji: '👑', name: 'One Hundred Circles', color: '#C9982E',
-      requirement: 'Attend 100 circles', earned: att.attended >= 100, count: 0 },
-  ].map((b) => ({ ...b, category: 'circle' }))
+      requirement: 'Attend 100 circles', earned: att.attended >= 100 },
+  ].map((b) => ({ ...b, category: 'circle', count: b.count ?? 0 }))
 
-  return [...choreBadges, ...attendanceBadges]
+  // --- Combined ---
+  const combinedBadges = [
+    { key: 'both-hands-full', emoji: '🙌', name: 'Both Hands Full', color: '#7A4FA0', countable: true,
+      requirement: 'Hit your chore goal and attend every circle in the same month',
+      earned: bothHandsCount > 0, count: bothHandsCount, category: 'combined' },
+  ]
+
+  return [...ringBadges, ...consistencyBadges, ...attendanceBadges, ...combinedBadges]
 }

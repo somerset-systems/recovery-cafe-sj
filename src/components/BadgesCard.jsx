@@ -260,7 +260,9 @@ export default function BadgesCard({ member, attendance = [], choreMonths = [], 
 
   const earnedCount = badges.filter((b) => b.earned).length
   const selected = badges.find((b) => b.key === selectedKey) || null
-  const nextUp = badges.filter((b) => !b.earned).slice(0, 3)
+  // Next Up = nearest unearned goals to chase. Some badges (e.g. Comeback) are
+  // never suggested as a goal — we don't want to imply a member should miss.
+  const nextUp = badges.filter((b) => !b.earned && !b.hideFromNextUp).slice(0, 3)
 
   // Chunk the badges into rows of 3 so the detail panel can be inserted under the
   // tapped badge's row (matches the 3-column grid below).
@@ -310,6 +312,11 @@ export default function BadgesCard({ member, attendance = [], choreMonths = [], 
           </Fragment>
         ))}
       </div>
+
+      <p style={{ margin: '18px 0 0', fontSize: fontSize.small, color: colors.textLight, lineHeight: 1.4 }}>
+        Record-keeping began December 1, 2025 for circles and June 2026 for chores.
+        Badges count everything from then on.
+      </p>
 
       {/* With nothing selected, guide the member with the next goals to aim for. */}
       {!selected && nextUp.length > 0 && (

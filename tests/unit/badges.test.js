@@ -164,15 +164,102 @@ describe('attendance badges', () => {
   })
 })
 
+describe('consistency, streak & combined badges', () => {
+  it('Goal Streak needs the 3-chore goal hit 3 calendar months in a row', () => {
+    const consecutive = byKey(evaluateBadges({ chores_done: 0 }, {
+      choreMonths: [
+        { month: '2025-01', chores_done: 4 },
+        { month: '2025-02', chores_done: 3 },
+        { month: '2025-03', chores_done: 5 },
+      ],
+    }))
+    expect(consecutive['goal-streak'].earned).toBe(true)
+
+    // A gap month breaks the run even though three months hit the goal.
+    const gapped = byKey(evaluateBadges({ chores_done: 0 }, {
+      choreMonths: [
+        { month: '2025-01', chores_done: 4 },
+        { month: '2025-02', chores_done: 3 },
+        { month: '2025-04', chores_done: 5 }, // March missing
+      ],
+    }))
+    expect(gapped['goal-streak'].earned).toBe(false)
+  })
+
+  it('Steady Hands needs at least one chore every month for 3 months running', () => {
+    const b = byKey(evaluateBadges({ chores_done: 0 }, {
+      choreMonths: [
+        { month: '2025-01', chores_done: 1 },
+        { month: '2025-02', chores_done: 2 },
+        { month: '2025-03', chores_done: 1 },
+      ],
+    }))
+    expect(b['steady-hands'].earned).toBe(true)
+    expect(b['goal-streak'].earned).toBe(false) // only 1-2 chores, goal is 3
+  })
+
+  it('Hundred Chores sums every month all-time', () => {
+    const under = byKey(evaluateBadges({ chores_done: 0 }, {
+      choreMonths: [{ month: '2025-01', chores_done: 40 }, { month: '2025-02', chores_done: 50 }],
+    }))
+    expect(under['hundred-chores'].earned).toBe(false)
+    const over = byKey(evaluateBadges({ chores_done: 0 }, {
+      choreMonths: [{ month: '2025-01', chores_done: 40 }, { month: '2025-02', chores_done: 70 }],
+    }))
+    expect(over['hundred-chores'].earned).toBe(true)
+  })
+
+  it('Unstoppable needs a 10-in-a-row attendance streak', () => {
+    const nine = byKey(evaluateBadges({}, { attendance: weeks(Array(9).fill('attended')) }))
+    expect(nine['unstoppable'].earned).toBe(false)
+    expect(nine['on-a-roll'].earned).toBe(true)
+    const ten = byKey(evaluateBadges({}, { attendance: weeks(Array(10).fill('attended')) }))
+    expect(ten['unstoppable'].earned).toBe(true)
+  })
+
+  it('Three Perfect Months needs three perfect calendar months', () => {
+    const attendance = [
+      ...weeks(Array(4).fill('attended'), '2025-01-05'),
+      ...weeks(Array(4).fill('attended'), '2025-02-02'),
+      ...weeks(Array(4).fill('attended'), '2025-03-02'),
+    ]
+    const b = byKey(evaluateBadges({}, { attendance }))
+    expect(b['three-perfect-months'].earned).toBe(true)
+  })
+
+  it('Both Hands Full needs chore goal AND a perfect month in the SAME month', () => {
+    // Perfect attendance in 2025-01, chore goal also met in 2025-01 → earned.
+    const aligned = byKey(evaluateBadges({ chores_done: 0 }, {
+      attendance: weeks(Array(4).fill('attended'), '2025-01-05'),
+      choreMonths: [{ month: '2025-01', chores_done: 5 }],
+    }))
+    expect(aligned['both-hands-full'].earned).toBe(true)
+
+    // Perfect attendance in 2025-01 but chores hit goal in a DIFFERENT month → not earned.
+    const misaligned = byKey(evaluateBadges({ chores_done: 0 }, {
+      attendance: weeks(Array(4).fill('attended'), '2025-01-05'),
+      choreMonths: [{ month: '2025-03', chores_done: 5 }],
+    }))
+    expect(misaligned['both-hands-full'].earned).toBe(false)
+  })
+})
+
 describe('shape', () => {
   it('always returns the full catalog with stable keys and earned flags', () => {
     const badges = evaluateBadges({ chores_done: 0 }, {})
-    expect(badges.length).toBe(17)
+    expect(badges.length).toBe(24)
+    const keys = badges.map((b) => b.key)
+    expect(new Set(keys).size).toBe(24) // all keys unique
     for (const b of badges) {
       expect(typeof b.key).toBe('string')
       expect(typeof b.name).toBe('string')
       expect(typeof b.earned).toBe('boolean')
       expect(b.color).toMatch(/^#/)
     }
+  })
+
+  it('flags Comeback so it is never suggested as a goal (Next Up)', () => {
+    const comeback = byKey(evaluateBadges({}, {}))['comeback']
+    expect(comeback.hideFromNextUp).toBe(true)
   })
 })

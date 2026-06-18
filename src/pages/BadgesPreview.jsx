@@ -34,6 +34,8 @@ const attendanceRealistic = weeks(
 )
 
 // --- 2. All earned: every badge lit up for icon review ---
+// Chore months and attendance share 2025 dates so "Both Hands Full" (chore goal +
+// perfect attendance in the SAME month) is earned.
 const memberAll = { id: 'preview-all', full_name: 'Preview', chores_done: 80 }
 const choreMonthsAll = [
   { month: '2025-01', chores_done: 80 }, { month: '2025-02', chores_done: 50 },
@@ -42,7 +44,7 @@ const choreMonthsAll = [
   { month: '2025-07', chores_done: 7 },  { month: '2025-08', chores_done: 3 },
 ]
 const attendanceAll = (() => {
-  const start = new Date('2024-01-07T00:00:00')
+  const start = new Date('2025-01-05T00:00:00')
   const out = []
   for (let i = 0; i < 104; i++) {
     const d = new Date(start)
