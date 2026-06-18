@@ -10,6 +10,21 @@ style.textContent = `
   button { font-family: inherit; }
   input { font-family: inherit; }
   a, a:link, a:visited, a:any-link { color: inherit !important; text-decoration: none !important; }
+
+  /* Chores extra-credit badge: a gentle gold-star pop after the ring fills. */
+  @keyframes extraCreditPop {
+    from { opacity: 0; transform: translateY(8px) scale(0.92); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  /* Honor reduced-motion everywhere: snap animations/transitions to their end state. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 `
 document.head.appendChild(style)
 

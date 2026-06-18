@@ -4,10 +4,11 @@ import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import { colors, fontSize } from '../theme.js'
 
-function statusMessage(done) {
+function statusMessage(done, goal) {
   if (done === 0) return 'Sign up for chores at the front desk'
-  if (done < 3) return "Keep going — you're almost there!"
-  return 'Amazing! You hit your goal this month! 🎉'
+  if (done < goal) return "Keep going, you're almost there!"
+  if (done === goal) return 'Amazing! You hit your goal this month! 🎉'
+  return 'Amazing! You went above and beyond this month! 🎉'
 }
 
 export default function Chores() {
@@ -17,7 +18,10 @@ export default function Chores() {
   if (error) return <Err message={error} />
   if (!member) return <Err message="Could not load your profile." />
 
-  const celebrating = member.chores_done >= member.chores_goal
+  const done = member.chores_done
+  const goal = member.chores_goal
+  const celebrating = done >= goal
+  const extra = Math.max(0, done - goal)
 
   return (
     <div
@@ -44,8 +48,8 @@ export default function Chores() {
         </div>
 
         <ProgressRing
-          value={member.chores_done}
-          goal={member.chores_goal}
+          value={done}
+          goal={goal}
           size={200}
           celebrating={celebrating}
         />
@@ -59,7 +63,7 @@ export default function Chores() {
             textAlign: 'center',
           }}
         >
-          {member.chores_done} of {member.chores_goal} chores
+          {extra > 0 ? `${done} chores this month` : `${done} of ${goal} chores`}
         </p>
 
         <p
@@ -72,8 +76,29 @@ export default function Chores() {
             lineHeight: 1.4,
           }}
         >
-          {statusMessage(member.chores_done)}
+          {statusMessage(done, goal)}
         </p>
+
+        {extra > 0 && (
+          <div
+            style={{
+              marginTop: 18,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: colors.extraCreditBg,
+              color: colors.extraCredit,
+              borderRadius: 999,
+              padding: '9px 18px',
+              fontSize: fontSize.medium,
+              fontWeight: 700,
+              animation: 'extraCreditPop 0.45s 0.5s cubic-bezier(0.22, 1, 0.36, 1) both',
+            }}
+          >
+            <span aria-hidden="true">🌟</span>
+            Extra credit · +{extra}
+          </div>
+        )}
       </Card>
     </div>
   )

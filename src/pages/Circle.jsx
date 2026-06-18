@@ -11,6 +11,20 @@ const STATUS_CONFIG = {
   absent:      { label: 'Missed',   bg: colors.chipMissed,   text: colors.white },
   excused:     { label: 'Excused',  bg: colors.chipExcused,  text: colors.white },
   not_enrolled:{ label: 'Not yet',  bg: colors.chipNotYet,   text: colors.white },
+  // A week that has already ended with nothing recorded. Quiet outline, not red:
+  // a blank past week means staff didn't log it, not that the member missed.
+  no_record:   { label: 'No record', bg: 'transparent', text: colors.textMedium, outline: true },
+}
+
+// Sunday (YYYY-MM-DD, local) of the week containing today. A week whose Sunday is
+// before this is fully concluded; at/after it the week is current or upcoming.
+function currentWeekSunday() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - d.getDay())
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
 }
 
 // Only show history from this date forward (no records before the program started tracking)
@@ -53,6 +67,7 @@ export default function Circle() {
   if (!member) return <Err message="Could not load your profile." />
 
   const today = new Date().toISOString().slice(0, 10)
+  const weekStart = currentWeekSunday()
 
   // Filter to Dec 1 2025 → today, most recent first
   const history = attendance
@@ -113,7 +128,12 @@ export default function Circle() {
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {displayed.map((record) => {
-                const cfg = STATUS_CONFIG[record.status] || STATUS_CONFIG.not_enrolled
+                // A blank/not-enrolled cell reads as "Not yet" for the current or an
+                // upcoming week, but as "No record" once that week has fully passed.
+                const unrecorded = record.status === 'not_enrolled'
+                const cfg = unrecorded && record.week_date < weekStart
+                  ? STATUS_CONFIG.no_record
+                  : (STATUS_CONFIG[record.status] || STATUS_CONFIG.not_enrolled)
                 return (
                   <div
                     key={record.id}
@@ -130,6 +150,7 @@ export default function Circle() {
                       style={{
                         background: cfg.bg,
                         color: cfg.text,
+                        border: `1.5px solid ${cfg.outline ? colors.border : 'transparent'}`,
                         borderRadius: 20,
                         padding: '5px 16px',
                         fontSize: fontSize.small,

@@ -27,6 +27,10 @@ export const colors = {
   dangerBg: '#FDF1EC', // light tint behind danger-colored text; danger on this = 4.63:1 (AA)
   white: '#FFFFFF',
   border: '#E0DAD3',
+
+  // Extra-credit badge for chores beyond the 3/month goal — a warm "gold star".
+  extraCredit: '#7A5A00',   // deep gold text; 5.6:1 on extraCreditBg (AA)
+  extraCreditBg: '#FBF0D5', // soft gold tint
 }
 
 export const fontSize = {
