@@ -13,10 +13,15 @@ const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_log
 const SMS_ENABLED = import.meta.env.VITE_SMS_VERIFICATION_ENABLED === 'true'
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
+// Deliberately gentle: our members are often not tech-savvy and may fumble the
+// 6-digit code a few times. Only WRONG CODES count toward this (a not-found phone
+// number does not), and the lockout is short. This is only a soft speed-bump —
+// real protection is server-side (codes expire in 10 min, are single-use, and
+// send-code throttles resends), so being forgiving here costs no real security.
 const RATE_KEY     = 'loginAttempts'
 const LOCKOUT_KEY  = 'loginLockoutUntil'
-const MAX_ATTEMPTS = 5
-const LOCKOUT_MS   = 10 * 60 * 1000 // 10 minutes
+const MAX_ATTEMPTS = 10
+const LOCKOUT_MS   = 2 * 60 * 1000 // 2 minutes
 
 function lockoutRemaining() {
   return Math.max(0, parseInt(localStorage.getItem(LOCKOUT_KEY) || '0', 10) - Date.now())
@@ -114,9 +119,10 @@ export default function Login() {
     const { data: member, error } = await db.getMemberByPhone(normalized)
 
     if (error || !member) {
+      // A number we can't find is almost always an honest typo or a member not
+      // yet in the roster — not abuse. Don't count it toward the lockout; just
+      // point them to staff so a fumbled number never strands anyone.
       setLoading(false)
-      recordFailedAttempt()
-      if (lockoutRemaining() > 0) setLockedOut(true)
       setErrorMsg("We couldn't find your number. Ask a staff member for help.")
       return
     }
