@@ -69,10 +69,9 @@ function Icon({ name, color }) {
       // A check-seal — the chore goal is the app's one celebratory moment.
       return (
         <svg {...svg}>
-          <circle cx="11.5" cy="12.5" r="7" {...fill} />
-          <circle cx="11.5" cy="12.5" r="7" />
-          <path d="m8.1 12.7 2.4 2.4 4.6-5" strokeWidth="2.1" />
-          <path d="M19.4 4.2l.55 1.45 1.45.55-1.45.55-.55 1.45-.55-1.45-1.45-.55 1.45-.55z" {...solid} />
+          <circle cx="12" cy="12" r="7.2" {...fill} />
+          <circle cx="12" cy="12" r="7.2" />
+          <path d="m8.4 12.2 2.4 2.4 4.7-5.1" strokeWidth="2.1" />
         </svg>
       )
     case 'profile':
