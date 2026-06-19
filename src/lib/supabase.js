@@ -55,32 +55,25 @@ if (!isFakeMode) {
     import.meta.env.VITE_SUPABASE_ANON_KEY
   )
 
+  // Reads go through SECURITY DEFINER RPCs (see supabase/lockdown_member_reads.sql),
+  // not direct table selects. The members/attendance/chore_months tables are no
+  // longer readable with the anon key, so the browser can only ever fetch one
+  // member (by phone or id) and that member's own data — never the whole roster.
+  // RPCs query live tables, so the morning sync's new members appear immediately.
   realDb = {
     async getMemberByPhone(phone) {
       const normalized = normalizePhone(phone)
-      const { data, error } = await client
-        .from('members')
-        .select('*')
-        .eq('phone', normalized)
-        .single()
-      return { data: data || null, error }
+      const { data, error } = await client.rpc('get_member_by_phone', { p_phone: normalized })
+      return { data: (data && data[0]) || null, error }
     },
 
     async getMemberById(id) {
-      const { data, error } = await client
-        .from('members')
-        .select('*')
-        .eq('id', id)
-        .single()
-      return { data: data || null, error }
+      const { data, error } = await client.rpc('get_member_by_id', { p_id: id })
+      return { data: (data && data[0]) || null, error }
     },
 
     async getAttendanceForMember(memberId) {
-      const { data, error } = await client
-        .from('attendance')
-        .select('*')
-        .eq('member_id', memberId)
-        .order('week_date', { ascending: false })
+      const { data, error } = await client.rpc('get_attendance_for_member', { p_member_id: memberId })
       return { data: data || [], error }
     },
 
@@ -95,11 +88,7 @@ if (!isFakeMode) {
     },
 
     async getChoreMonthsForMember(memberId) {
-      const { data, error } = await client
-        .from('chore_months')
-        .select('*')
-        .eq('member_id', memberId)
-        .order('month', { ascending: true })
+      const { data, error } = await client.rpc('get_chore_months_for_member', { p_member_id: memberId })
       return { data: data || [], error }
     },
   }
