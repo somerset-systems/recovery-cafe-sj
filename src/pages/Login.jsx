@@ -6,8 +6,10 @@ import { colors, fontSize } from '../theme.js'
 const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_logo.png'
 
 // Flip to "true" (via env) once Twilio compliance is approved and credentials are
-// in Netlify. Default OFF keeps the consent + dev-code (123456) flow. See
-// TWILIO_INTEGRATION.md for the one-sitting enable checklist.
+// in Netlify. See TWILIO_INTEGRATION.md for the one-sitting enable checklist.
+// When OFF, login uses the dev code 123456 — but ONLY in a local `vite dev` run
+// (import.meta.env.DEV). In any deployed build the dev code never works, so it
+// can't become a master key if this flag is ever misconfigured to off in prod.
 const SMS_ENABLED = import.meta.env.VITE_SMS_VERIFICATION_ENABLED === 'true'
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -227,7 +229,9 @@ export default function Login() {
         setErrorMsg('Incorrect code. Please try again.')
         return
       }
-    } else if (entered !== '123456') {
+    } else if (!(import.meta.env.DEV && entered === '123456')) {
+      // SMS off: accept the dev code 123456 only in a local dev server, never
+      // in a deployed build (see SMS_ENABLED note above).
       setLoading(false)
       recordFailedAttempt()
       if (lockoutRemaining() > 0) { setLockedOut(true); return }
