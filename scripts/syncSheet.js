@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { createServer } from 'http'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { dedupeChoreSnapshots } from './lib/choreSnapshots.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1189,14 +1190,26 @@ async function runReal() {
   // the sync overwrites this month's row with the latest count (chores only climb
   // within a month, so this lands on the peak). Past months are left untouched.
   console.log('\n--- Upserting chore snapshots ---')
-  let choreMonthsUpserted = 0, choreMonthErrors = 0, choreFloorsHeld = 0
-  if (choreSnapshots.length > 0) {
+  let choreMonthsUpserted = 0, choreMonthErrors = 0, choreFloorsHeld = 0, choreDupesMerged = 0
+
+  // Collapse duplicates so one shared phone in the sheet can't sink the whole batch.
+  // See scripts/lib/choreSnapshots.js for why this is load-bearing.
+  const { rows: choreSnapshotRows, merged: dupesMerged } = dedupeChoreSnapshots(choreSnapshots)
+  choreDupesMerged = dupesMerged
+  if (choreDupesMerged > 0) {
+    console.warn(`[chore_months] merged ${choreDupesMerged} duplicate snapshot(s) into ` +
+      `${choreSnapshotRows.length} row(s) — roster rows sharing a phone collapse to one ` +
+      `member. Kept the highest chore count for each. Fix the shared phone in the sheet ` +
+      `so these members stop overwriting each other.`)
+  }
+
+  if (choreSnapshotRows.length > 0) {
     // Monotonic guard: this month's snapshot must never DROP. Chores climb through a
     // month, but if staff correct a count downward mid-month, blindly overwriting would
     // lower the stored peak and could un-earn a badge the member already saw. Read the
     // existing rows for this month and keep the higher of (existing, new) per member.
     try {
-      const memberIds = choreSnapshots.map((s) => s.member_id)
+      const memberIds = choreSnapshotRows.map((s) => s.member_id)
       const { data: priorChore, error: priorErr } = await supabase
         .from('chore_months')
         .select('member_id, chores_done')
@@ -1204,7 +1217,7 @@ async function runReal() {
         .in('member_id', memberIds)
       if (priorErr) throw priorErr
       const priorByMember = new Map((priorChore || []).map((r) => [r.member_id, r.chores_done]))
-      for (const s of choreSnapshots) {
+      for (const s of choreSnapshotRows) {
         const prev = priorByMember.get(s.member_id) ?? 0
         if (prev > s.chores_done) {
           choreFloorsHeld++
@@ -1220,19 +1233,30 @@ async function runReal() {
     try {
       const { error } = await supabase
         .from('chore_months')
-        .upsert(choreSnapshots, { onConflict: 'member_id,month' })
+        .upsert(choreSnapshotRows, { onConflict: 'member_id,month' })
       if (error) throw error
-      choreMonthsUpserted = choreSnapshots.length
+      choreMonthsUpserted = choreSnapshotRows.length
     } catch (err) {
-      choreMonthErrors = choreSnapshots.length
+      choreMonthErrors = choreSnapshotRows.length
       console.error(`[chore_months] ✗ ${err.message}`)
       console.error('[chore_months] (If this is a "relation does not exist" error, run the chore_months migration in supabase/migrations/.)')
+      // Fail the run. chore_months is the durable history behind every chore badge:
+      // members keep seeing the right number for the CURRENT month (badges fold in the
+      // live chores_done), so a failure here is invisible until the month rolls over and
+      // the stale snapshot freezes. Exiting non-zero is what turns the workflow red and
+      // opens the notification issue — otherwise this rots silently for weeks.
+      process.exitCode = 1
     }
   }
 
   console.log('\n=== Summary ===')
   console.log(`Members:             ${membersUpserted} upserted, ${membersSkipped} skipped (no phone / bad data)`)
-  console.log(`Chore snapshots:     ${choreMonthsUpserted} upserted for ${currentMonth}${choreFloorsHeld ? `, ${choreFloorsHeld} held at recorded peak` : ''}${choreMonthErrors ? `, ${choreMonthErrors} failed` : ''}`)
+  console.log(`Chore snapshots:     ${choreMonthsUpserted} upserted for ${currentMonth}${choreFloorsHeld ? `, ${choreFloorsHeld} held at recorded peak` : ''}${choreDupesMerged ? `, ${choreDupesMerged} duplicate(s) merged` : ''}${choreMonthErrors ? `, ${choreMonthErrors} FAILED` : ''}`)
+  if (choreMonthErrors) {
+    console.error(`\n*** Chore history was NOT written for ${currentMonth}. Members will still see the`)
+    console.error(`*** right number this month, but it freezes at the last good snapshot once the`)
+    console.error(`*** month rolls over. Fix and re-run before the 1st.`)
+  }
   console.log(`Duplicate phones:    ${duplicatePhones} row(s) shared a phone with an earlier row (later overwrote earlier)`)
   console.log(`Phone changes:       ${phoneChanges} member(s) arrived with a new phone — history stays on the old row until staff reconcile (see warnings above)`)
   console.log(`Circle labels:       ${labelsUnparseable} unparseable, ${labelsPartial} partial (some fields blank)`)

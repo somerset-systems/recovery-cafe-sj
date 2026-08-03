@@ -26,3 +26,6 @@ PRODUCT.md
 test-results/
 playwright-report/
 .playwright/
+
+# Claude Code local agent worktrees (machine-local scratch, not project config)
+.claude/worktrees/
