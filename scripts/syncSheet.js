@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // scripts/syncSheet.js — Google Sheets → Supabase sync
 // Usage:
-//   node scripts/syncSheet.js --fake   (dry run with fake data, no credentials needed)
-//   node scripts/syncSheet.js          (real sync, requires .env with Google credentials)
+//   node scripts/syncSheet.js --fake         (dry run with fake data, no credentials needed)
+//   node scripts/syncSheet.js                (real sync, requires .env with Google credentials)
+//   node scripts/syncSheet.js --heal-splits  (one-time repair: merge members the old
+//                                             phone-keyed upsert split into two rows)
 
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { createServer } from 'http'
@@ -15,8 +17,83 @@ const __dirname = dirname(__filename)
 
 const isFake = process.argv.includes('--fake')
 const isDiscover = process.argv.includes('--discover')
+// Opt-in repair for members the OLD phone-keyed upsert split into two rows before the
+// identity fix landed. Healing deletes the leftover row, so it never runs unattended —
+// the daily workflow reports splits and a human runs this once to clear them.
+const healSplits = process.argv.includes('--heal-splits')
 
 // --- Utilities ---
+
+/**
+ * Fold split member rows back into one.
+ *
+ * When a member's phone number changed, the old phone-keyed upsert inserted a SECOND
+ * members row for the same person. Both rows carry the same Agency client_id, which is
+ * how we know they are one person — that is the agency's own unique person id, not a
+ * guess from name similarity.
+ *
+ * The oldest row (`canonicalId`) holds the real badge history, because chore_months only
+ * ever gets the CURRENT month written to it — the newer row is missing every month before
+ * the split. So we lift the orphan's chore months onto the canonical row (keeping the
+ * higher count for any month both have, so a badge can never un-earn), then delete the
+ * orphan to free up its phone number for the canonical row.
+ *
+ * Attendance is not copied: the sync rewrites every week from the sheet onto whichever row
+ * it resolves to, later in this same run, so the canonical row is refilled immediately.
+ *
+ * Returns true if the merge completed and the orphan rows are gone.
+ */
+async function mergeSplitMemberRows(supabase, canonicalId, orphans, name) {
+  const orphanIds = orphans.map((o) => o.id)
+  try {
+    const { data: orphanChores, error: readErr } = await supabase
+      .from('chore_months')
+      .select('month, chores_done')
+      .in('member_id', orphanIds)
+    if (readErr) throw readErr
+
+    const { data: canonChores, error: canonErr } = await supabase
+      .from('chore_months')
+      .select('month, chores_done')
+      .eq('member_id', canonicalId)
+    if (canonErr) throw canonErr
+
+    // Highest count wins for any month that exists on both rows.
+    const bestByMonth = new Map()
+    for (const r of [...(canonChores || []), ...(orphanChores || [])]) {
+      const prev = bestByMonth.get(r.month) ?? -1
+      if (r.chores_done > prev) bestByMonth.set(r.month, r.chores_done)
+    }
+    const mergedRows = [...bestByMonth].map(([month, chores_done]) => ({
+      member_id: canonicalId, month, chores_done,
+    }))
+
+    if (mergedRows.length > 0) {
+      const { error: writeErr } = await supabase
+        .from('chore_months')
+        .upsert(mergedRows, { onConflict: 'member_id,month' })
+      if (writeErr) throw writeErr
+    }
+
+    // Clear the orphan's attendance first. chore_months cascades on delete but the
+    // attendance foreign key may not, and a blocked delete would leave the split in
+    // place. Dropping these rows loses nothing: the attendance step later in this same
+    // run rewrites every week from the sheet onto the canonical row.
+    const { error: attErr } = await supabase.from('attendance').delete().in('member_id', orphanIds)
+    if (attErr) throw attErr
+
+    // Only now drop the orphan — the history had to be safely on the canonical row first.
+    const { error: delErr } = await supabase.from('members').delete().in('id', orphanIds)
+    if (delErr) throw delErr
+
+    console.log(`[member] HEALED split for "${name}": merged ${orphanIds.length} orphan row(s) ` +
+      `into ${canonicalId}, ${mergedRows.length} chore month(s) preserved.`)
+    return true
+  } catch (err) {
+    console.error(`[member] could not heal split rows for "${name}": ${err.message} — left as-is, no data removed`)
+    return false
+  }
+}
 
 function normalizePhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '')
@@ -976,7 +1053,9 @@ async function runReal() {
   let clientIdsFound = 0, phonesFromAgency = 0
   let labelsUnparseable = 0, labelsPartial = 0   // circle-label quality counters
   let duplicatePhones = 0                          // rows whose phone was already used this run
-  let phoneChanges = 0                             // members whose phone changed (would orphan history)
+  let phoneChanges = 0                             // members whose phone changed (history preserved in place)
+  let phoneChangeConflicts = 0                     // phone change we refused because the new number belongs to someone else
+  let splitMembersMerged = 0                       // pre-existing split rows healed back together
   const memberIdByName = new Map()  // raw roster name → supabase member id
   const phoneOwner = new Map()      // normalized phone → first roster name that claimed it
   const skippedMembers = []         // raw roster names that had no phone match (for skip report)
@@ -990,22 +1069,40 @@ async function runReal() {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const choreSnapshots = []  // [{ member_id, month, chores_done }]
 
-  // Snapshot of existing members keyed by their stable Agency client_id. We use this
-  // to spot a member whose PHONE changed in the sheet: the members upsert keys on
-  // phone, so a new number creates a brand-new row and orphans that member's
-  // attendance + chore history (their badges would reset). We can't safely auto-merge
-  // here (a wrong merge would blend two members), so we warn loudly and let staff fix
-  // it — either point the new number at the existing row, or re-key the table on
-  // client_id with a migration. Only Agency client_ids are stable enough to trust;
-  // row-number fallbacks are not, so we never match on those.
-  const existingByClientId = new Map()  // String(client_id) → { id, phone }
+  // Snapshot of existing members, keyed two ways, so a member who changes their phone
+  // number keeps their identity.
+  //
+  // A member's row id is what attendance and chore_months hang off, so the id is the
+  // real identity. Phone is only a login key — it changes when someone loses a phone or
+  // switches carriers, which for this population happens often. The upsert used to key
+  // on phone alone, so a new number INSERTed a second row and stranded that member's
+  // whole badge history on the old one. Now we resolve identity by the stable Agency
+  // client_id first and move the phone onto the row that already holds the history.
+  //
+  // Only Agency client_ids are stable enough to trust; row-number fallbacks are not, so
+  // we never match on those.
+  const existingByClientId = new Map()  // String(client_id) → { id, phone, all: [rows] }
+  const existingByPhone    = new Map()  // normalized phone → { id, clientId }
   try {
     const { data: existingMembers, error: exErr } = await supabase
       .from('members')
-      .select('id, client_id, phone')
+      .select('id, client_id, phone, created_at')
     if (exErr) throw exErr
+
+    // Group by client_id. A client_id with more than one row is a member who was already
+    // split by the old phone-keyed upsert; the OLDEST row is the one holding the history,
+    // so that is the one we treat as canonical and heal back onto.
+    const byClientId = new Map()
     for (const m of existingMembers || []) {
-      if (m.client_id) existingByClientId.set(String(m.client_id), { id: m.id, phone: m.phone })
+      if (m.phone) existingByPhone.set(String(m.phone), { id: m.id, clientId: m.client_id ? String(m.client_id) : null })
+      if (!m.client_id) continue
+      const key = String(m.client_id)
+      if (!byClientId.has(key)) byClientId.set(key, [])
+      byClientId.get(key).push(m)
+    }
+    for (const [key, rows] of byClientId) {
+      rows.sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+      existingByClientId.set(key, { id: rows[0].id, phone: rows[0].phone, all: rows })
     }
   } catch (err) {
     console.warn(`[member] could not load existing members for phone-change detection: ${err.message}`)
@@ -1074,16 +1171,58 @@ async function runReal() {
       }
     }
 
-    // Phone-change guard: a member we already have (matched by stable Agency client_id)
-    // is arriving with a different phone. The upsert below keys on phone, so it would
-    // INSERT a new row and strand the old badge/attendance history. Warn, don't merge.
+    // Identity resolution. When we can match this roster row to an existing member by
+    // their stable Agency client_id, we write BY ROW ID rather than by phone. That is
+    // what keeps a member's attendance and badges attached to them when their phone
+    // number changes — the number moves onto the row that already holds the history
+    // instead of inserting a second row and stranding it.
+    let updateTargetId = null
     if (clientIdFromAgency) {
       const prior = existingByClientId.get(String(clientId))
-      if (prior && prior.phone && prior.phone !== phone) {
-        phoneChanges++
-        console.warn(`[member] PHONE CHANGED for "${name}" (client_id ${clientId}): ${prior.phone} → ${phone}. ` +
-          `The members upsert keys on phone, so this creates a NEW row (id ${prior.id} keeps the history). ` +
-          `To preserve badges/attendance, update the phone on the existing row or re-key members on client_id.`)
+
+      // A client_id holding more than one row is a member already split apart by the
+      // old phone-keyed upsert. Healing that means deleting the extra row, so it only
+      // happens with --heal-splits; otherwise we report it and leave the data alone.
+      const isSplit = prior && prior.all && prior.all.length > 1
+      if (isSplit) {
+        const orphans = prior.all.slice(1)
+        if (healSplits) {
+          const ok = await mergeSplitMemberRows(supabase, prior.id, orphans, name)
+          if (ok) {
+            splitMembersMerged++
+            for (const o of orphans) existingByPhone.delete(String(o.phone))
+            prior.all = [prior.all[0]]
+          }
+        } else {
+          console.warn(`[member] SPLIT ROWS for "${name}" (client_id ${clientId}): ${prior.all.length} member rows ` +
+            `(${prior.all.map((r) => `${r.id}/${r.phone}`).join(', ')}). Their badge history is on the oldest row. ` +
+            `Re-run once with --heal-splits to merge them back together.`)
+        }
+      }
+
+      // Re-read: mergeSplitMemberRows may have just freed the phone we want.
+      const stillSplit = prior && prior.all && prior.all.length > 1
+
+      if (prior && !stillSplit) {
+        if (prior.phone && prior.phone !== phone) {
+          const holder = existingByPhone.get(phone)
+          if (holder && holder.clientId && holder.clientId !== String(clientId)) {
+            // The incoming number already belongs to a DIFFERENT member. Moving it would
+            // hand this member someone else's history — far worse than a reset. Refuse.
+            phoneChangeConflicts++
+            console.warn(`[member] PHONE CHANGE REFUSED for "${name}" (client_id ${clientId}): ${prior.phone} → ${phone}, ` +
+              `but ${phone} is already member ${holder.id} (client_id ${holder.clientId}). Two people are listed with ` +
+              `the same number in the sheet — staff must fix that before this member's number can move.`)
+          } else {
+            phoneChanges++
+            updateTargetId = prior.id
+            console.log(`[member] phone changed for "${name}" (client_id ${clientId}): ${prior.phone} → ${phone} ` +
+              `— moved onto existing row ${prior.id}, badges and attendance preserved.`)
+          }
+        } else {
+          // Same number, but still write by id: the row id is the identity, not the phone.
+          updateTargetId = prior.id
+        }
       }
     }
     const circleLabel = (circleCol ? row[circleCol] : '') || circleLabelByName.get(rosterMatch?.matchedKey) || ''
@@ -1113,14 +1252,27 @@ async function runReal() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('members')
-        .upsert(memberRow, { onConflict: 'phone' })
-        .select('id')
-        .single()
+      // updateTargetId set = we know which existing row is this person, so write by id
+      // (this is what carries a changed phone number onto their existing history).
+      // Otherwise fall back to the phone-keyed upsert, which inserts genuinely new members.
+      const { data, error } = updateTargetId
+        ? await supabase
+            .from('members')
+            .update(memberRow)
+            .eq('id', updateTargetId)
+            .select('id')
+            .single()
+        : await supabase
+            .from('members')
+            .upsert(memberRow, { onConflict: 'phone' })
+            .select('id')
+            .single()
 
       if (error) throw error
       memberIdByName.set(name, data.id)
+      // Keep the in-run indexes truthful so a later roster row can't collide with the
+      // number we just moved.
+      existingByPhone.set(phone, { id: data.id, clientId: clientId ? String(clientId) : null })
       membersUpserted++
       choreSnapshots.push({ member_id: data.id, month: currentMonth, chores_done: choresDone })
       console.log(`[member] ✓ ${name} | ${phone} | chores: ${choresDone}`)
@@ -1258,7 +1410,10 @@ async function runReal() {
     console.error(`*** month rolls over. Fix and re-run before the 1st.`)
   }
   console.log(`Duplicate phones:    ${duplicatePhones} row(s) shared a phone with an earlier row (later overwrote earlier)`)
-  console.log(`Phone changes:       ${phoneChanges} member(s) arrived with a new phone — history stays on the old row until staff reconcile (see warnings above)`)
+  console.log(`Phone changes:       ${phoneChanges} member(s) arrived with a new phone — number moved onto their existing row, history preserved${phoneChangeConflicts ? `, ${phoneChangeConflicts} REFUSED (number belongs to another member)` : ''}`)
+  if (splitMembersMerged > 0) {
+    console.log(`Split rows healed:   ${splitMembersMerged} member(s) merged back into one row`)
+  }
   console.log(`Circle labels:       ${labelsUnparseable} unparseable, ${labelsPartial} partial (some fields blank)`)
   console.log(`Attendance:          ${attendanceUpserted} upserted, ${attendanceMalformed} malformed cells (stored as not_enrolled), ${attendanceErrors} write errors`)
   console.log(`Client IDs updated:  ${clientIdsFound} from Agency Data${clientIdsFound < membersUpserted ? ` (${membersUpserted - clientIdsFound} fell back to row number)` : ''}`)

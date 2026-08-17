@@ -73,6 +73,29 @@ The script still works on your PC:
 To run unattended locally with the service account, just drop the downloaded key file in
 the project root as `google-credentials.json`.
 
+## When a member changes their phone number
+
+The sync identifies members by their **Agency client_id**, not by phone. When someone
+shows up in the sheet with a new number, the number is moved onto their existing row, so
+their badges and attendance history follow them. The summary reports this as
+`Phone changes: N — number moved onto their existing row, history preserved`.
+
+Two cases the sync will not resolve on its own:
+
+- **`PHONE CHANGE REFUSED`** — the new number is already listed against a *different*
+  member. Moving it would hand one member another member's history, so the sync refuses.
+  Fix the duplicate number in the staff sheet and the next run sorts itself out.
+- **`SPLIT ROWS`** — a member who was already broken into two rows by the older
+  phone-keyed sync, before this fix existed. Repair them with a one-time run:
+
+  ```
+  node scripts/syncSheet.js --heal-splits
+  ```
+
+  This merges the chore history onto the older row (keeping the higher count for any
+  month that appears twice), then deletes the leftover row. It deletes data, so it is
+  never part of the daily scheduled run — the daily sync only reports the split.
+
 ## Changing the schedule
 
 Edit the `cron:` line in `.github/workflows/sync-roster.yml`. Remember it's **UTC** and
