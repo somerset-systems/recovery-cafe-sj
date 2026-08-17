@@ -32,7 +32,9 @@ exports.handler = async function(event) {
       return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Invalid phone number' }) }
     }
 
-    // Verify the phone exists in members table before sending anything
+    // Verify the phone belongs to someone we know before sending anything.
+    // Two sources: real members, and staff (who log in to the preview mode and are
+    // deliberately absent from the members table — see supabase/staff_access.sql).
     const db = supabase()
     const { data: member, error: memberErr } = await db
       .from('members')
@@ -41,7 +43,20 @@ exports.handler = async function(event) {
       .maybeSingle()
 
     if (memberErr) throw memberErr
-    if (!member) {
+
+    let recognized = !!member
+    if (!recognized) {
+      const { data: staff, error: staffErr } = await db
+        .from('staff')
+        .select('id')
+        .eq('phone', phone)
+        .maybeSingle()
+      // A missing staff table (migration not run yet) must not break member logins.
+      if (staffErr && staffErr.code !== '42P01') throw staffErr
+      recognized = !!staff
+    }
+
+    if (!recognized) {
       // Return same error shape as a valid number so callers can't enumerate members
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: true }) }
     }

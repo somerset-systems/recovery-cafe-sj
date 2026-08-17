@@ -1,4 +1,6 @@
 import { fakeMembers, fakeAttendance, fakeEvents, fakeChoreMonths } from './fakeData.js'
+import { DEMO_MEMBER, DEMO_CHORE_MONTHS, buildDemoAttendance } from './demoData.js'
+import { isStaffPreview } from './staffSession.js'
 
 const isFakeMode = !import.meta.env.VITE_SUPABASE_URL
 
@@ -47,6 +49,7 @@ const fakeDb = {
 // --- Real Supabase API ---
 
 let realDb = null
+let realClient = null   // module-scoped so the staff lookup below can reuse it
 
 if (!isFakeMode) {
   const { createClient } = await import('@supabase/supabase-js')
@@ -54,6 +57,7 @@ if (!isFakeMode) {
     import.meta.env.VITE_SUPABASE_URL,
     import.meta.env.VITE_SUPABASE_ANON_KEY
   )
+  realClient = client
 
   // Reads go through SECURITY DEFINER RPCs (see supabase/lockdown_member_reads.sql),
   // not direct table selects. The members/attendance/chore_months tables are no
@@ -94,5 +98,51 @@ if (!isFakeMode) {
   }
 }
 
-export const db = isFakeMode ? fakeDb : realDb
+// --- Staff preview API (bundled sample member, never touches Supabase) ---
+//
+// Events are deliberately absent here: they come from the live Google Calendar via
+// lib/googleCalendar.js, not through `db`, so staff see the real schedule automatically.
+
+const demoDb = {
+  getMemberByPhone() { return Promise.resolve({ data: DEMO_MEMBER, error: null }) },
+  getMemberById()    { return Promise.resolve({ data: DEMO_MEMBER, error: null }) },
+  getAttendanceForMember() { return Promise.resolve({ data: buildDemoAttendance(), error: null }) },
+  getChoreMonthsForMember() {
+    // Ascending by month, matching what the real RPC returns.
+    const rows = [...DEMO_CHORE_MONTHS].sort((a, b) => a.month.localeCompare(b.month))
+    return Promise.resolve({ data: rows, error: null })
+  },
+  getUpcomingEvents() {
+    const today = new Date().toISOString().slice(0, 10)
+    const events = fakeEvents.filter((e) => e.event_date >= today)
+    return Promise.resolve({ data: events, error: null })
+  },
+}
+
+const liveDb = isFakeMode ? fakeDb : realDb
+
+// Every member-data read goes through here, so the staff check lives in exactly one
+// place. The flag is read at CALL time, not at import time — a staff member logs in
+// after this module has already loaded, and their very next read has to be redirected.
+//
+// The security property this gives us: for a staff session the get_member_* RPCs are
+// never invoked at all, so there is no code path by which a staff login could surface a
+// real member's name, phone, circle, or attendance.
+export const db = {
+  getMemberByPhone(phone)      { return (isStaffPreview() ? demoDb : liveDb).getMemberByPhone(phone) },
+  getMemberById(id)            { return (isStaffPreview() ? demoDb : liveDb).getMemberById(id) },
+  getAttendanceForMember(id)   { return (isStaffPreview() ? demoDb : liveDb).getAttendanceForMember(id) },
+  getChoreMonthsForMember(id)  { return (isStaffPreview() ? demoDb : liveDb).getChoreMonthsForMember(id) },
+  getUpcomingEvents()          { return (isStaffPreview() ? demoDb : liveDb).getUpcomingEvents() },
+}
+
+// Staff lookup for the login screen. Separate from `db` because it is not member data:
+// it asks "is this number a staff phone?" before the member lookup runs.
+export async function getStaffByPhone(phone) {
+  if (isFakeMode) return { data: null, error: null } // no staff table in local fake mode
+  const normalized = normalizePhone(phone)
+  const { data, error } = await realClient.rpc('get_staff_by_phone', { p_phone: normalized })
+  return { data: (data && data[0]) || null, error }
+}
+
 export { normalizePhone }

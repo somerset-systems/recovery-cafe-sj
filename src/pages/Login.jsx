@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { db, normalizePhone } from '../lib/supabase.js'
+import { db, normalizePhone, getStaffByPhone } from '../lib/supabase.js'
+import { startStaffSession, clearStaffSession } from '../lib/staffSession.js'
+import { DEMO_MEMBER } from '../lib/demoData.js'
 import { colors, fontSize } from '../theme.js'
 
 const LOGO_URL = 'https://recoverycafesj.org/wp-content/uploads/2024/05/rcsj_logo.png'
@@ -116,15 +118,32 @@ export default function Login() {
 
     setLoading(true)
     setErrorMsg('')
-    const { data: member, error } = await db.getMemberByPhone(normalized)
 
-    if (error || !member) {
-      // A number we can't find is almost always an honest typo or a member not
-      // yet in the roster — not abuse. Don't count it toward the lockout; just
-      // point them to staff so a fumbled number never strands anyone.
-      setLoading(false)
-      setErrorMsg("We couldn't find your number. Ask a staff member for help.")
-      return
+    // Staff check runs first. A staff number is deliberately not in the members table,
+    // so without this it would fall through to "we couldn't find your number". Matching
+    // here puts the session into preview mode, where every member read is served from
+    // the bundled sample member instead of Supabase.
+    const { data: staff } = await getStaffByPhone(normalized)
+
+    // Always clear any previous staff preview on this device first, so a real member
+    // signing in on a shared phone can never land in the demo.
+    clearStaffSession()
+
+    let member
+    if (staff) {
+      startStaffSession(staff)
+      member = { ...DEMO_MEMBER, staffName: staff.full_name }
+    } else {
+      const { data: found, error } = await db.getMemberByPhone(normalized)
+      if (error || !found) {
+        // A number we can't find is almost always an honest typo or a member not
+        // yet in the roster — not abuse. Don't count it toward the lockout; just
+        // point them to staff so a fumbled number never strands anyone.
+        setLoading(false)
+        setErrorMsg("We couldn't find your number. Ask a staff member for help.")
+        return
+      }
+      member = found
     }
 
     // Send SMS verification code (skipped while SMS_ENABLED = false)

@@ -11,7 +11,8 @@ const SUBTITLES = [
   'This community loves you.',
 ]
 
-export default function Header({ memberName }) {
+// topOffset makes room for the staff preview banner, which is fixed above the header.
+export default function Header({ memberName, topOffset = 0 }) {
   const firstName = memberName ? memberName.split(' ')[0] : ''
   const [logoVisible, setLogoVisible] = useState(true)
   const [subtitle] = useState(() => SUBTITLES[Math.floor(Math.random() * SUBTITLES.length)])
@@ -20,7 +21,7 @@ export default function Header({ memberName }) {
     <div
       style={{
         position: 'fixed',
-        top: 0,
+        top: topOffset,
         left: 0,
         right: 0,
         background: colors.primaryGreen,

@@ -6,6 +6,7 @@ import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import ChoreRing from '../components/ChoreRing.jsx'
 import { getRings, choreStatusMessage } from '../lib/choreRings.js'
+import { isStaffPreview } from '../lib/staffSession.js'
 import { colors, fontSize } from '../theme.js'
 
 const TAG_STYLES = {
@@ -95,6 +96,33 @@ export default function Home() {
         boxSizing: 'border-box',
       }}
     >
+      {/* Staff preview notice. The fixed banner up top says the same thing, but this
+          sits in the content itself so it can't be missed or scrolled past, and so it
+          survives a screenshot cropped below the banner. */}
+      {isStaffPreview() && (
+        <div
+          style={{
+            background: colors.previewNoticeBg,
+            border: `2px solid ${colors.previewNoticeBorder}`,
+            borderRadius: 12,
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <p style={{ margin: '0 0 6px 0', fontSize: fontSize.large, fontWeight: 800, color: colors.textDark }}>
+            None of this is real
+          </p>
+          <p style={{ margin: 0, fontSize: fontSize.body, lineHeight: 1.45, color: colors.textDark }}>
+            You're seeing the app as a made-up member named Alex Sample. The circle,
+            the chores, the badges and the attendance below are all invented so you can
+            look around. No real member's information is shown here.
+          </p>
+          <p style={{ margin: '8px 0 0 0', fontSize: fontSize.body, lineHeight: 1.45, color: colors.textMedium }}>
+            The events list is the one real thing — that's the cafe's actual calendar.
+          </p>
+        </div>
+      )}
+
       {/* Circle Card */}
       <Card>
         <SectionLabel label="Your Circle" />

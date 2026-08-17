@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMember } from '../hooks/useMember.js'
 import { db } from '../lib/supabase.js'
+import { clearStaffSession } from '../lib/staffSession.js'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import BadgesCard from '../components/BadgesCard.jsx'
@@ -34,6 +35,7 @@ export default function Profile() {
   function handleSignOut() {
     localStorage.removeItem('memberId')
     localStorage.removeItem('loginAt') // clear session timestamp too, matching RequireAuth
+    clearStaffSession()                // otherwise the next person on this phone stays in the demo
     navigate('/login')
   }
 

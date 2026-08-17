@@ -11,6 +11,8 @@ import Profile from './pages/Profile.jsx'
 import Privacy from './pages/Privacy.jsx'
 import Terms from './pages/Terms.jsx'
 import BadgesPreview from './pages/BadgesPreview.jsx'
+import StaffPreviewBanner, { STAFF_BANNER_HEIGHT } from './components/StaffPreviewBanner.jsx'
+import { isStaffPreview, clearStaffSession } from './lib/staffSession.js'
 import { colors } from './theme.js'
 
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000 // 30 days in ms
@@ -26,6 +28,7 @@ function RequireAuth({ children }) {
   if (!memberId || expired) {
     localStorage.removeItem('memberId')
     localStorage.removeItem('loginAt')
+    clearStaffSession() // an expired staff preview must not linger into the next login
     return <Navigate to="/login" replace />
   }
   return children
@@ -37,12 +40,18 @@ function AppShell() {
   const isLogin = pathname === '/login'
   const isStatic = pathname === '/privacy' || pathname === '/terms'
 
+  // Staff preview pushes everything down by the banner's height. Read per render (not
+  // once at module load) so it turns on the moment a staff member finishes logging in.
+  const showBanner = isStaffPreview() && !isLogin && !isStatic
+  const topOffset = showBanner ? STAFF_BANNER_HEIGHT : 0
+
   return (
     <>
-      {!isLogin && !isStatic && <Header memberName={member?.full_name} />}
+      {showBanner && <StaffPreviewBanner />}
+      {!isLogin && !isStatic && <Header memberName={member?.full_name} topOffset={topOffset} />}
       <main
         style={{
-          paddingTop: isLogin || isStatic ? 0 : 104,
+          paddingTop: isLogin || isStatic ? 0 : 104 + topOffset,
           paddingBottom: isLogin || isStatic ? 0 : 60,
           background: colors.background,
           minHeight: '100dvh',
