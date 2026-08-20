@@ -36,7 +36,7 @@ export default function StaffPreviewBanner() {
     >
       <span aria-hidden="true" style={{ fontSize: fontSize.medium }}>👁</span>
       <span style={{ fontSize: fontSize.body, fontWeight: 700, lineHeight: 1.2 }}>
-        STAFF PREVIEW — not a real member
+        STAFF PREVIEW
       </span>
     </div>
   )

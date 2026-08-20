@@ -34,8 +34,6 @@ export const colors = {
   // can never be mistaken for a member's real screen at a glance.
   previewBg: '#8A5200',       // deep amber; white on this = 7.1:1
   previewText: '#FFFFFF',
-  previewNoticeBg: '#FFF4E0', // light amber card tint on the Home screen
-  previewNoticeBorder: '#B8781F',
   white: '#FFFFFF',
   border: '#E0DAD3',
   gold: '#C9982E',         // top-tier accent: gold ring + the centre number once all rings close

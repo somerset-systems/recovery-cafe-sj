@@ -62,7 +62,7 @@ export default function Profile() {
         {/* In staff preview the name above is the staff member's own, so this card would
             otherwise read as a genuine member record. Say plainly that it isn't. */}
         {isStaffPreview() && (
-          <p style={{ margin: '6px 0 0 0', fontSize: fontSize.body, fontWeight: 600, color: colors.previewNoticeBorder }}>
+          <p style={{ margin: '6px 0 0 0', fontSize: fontSize.body, fontWeight: 600, color: colors.previewBg }}>
             Staff preview — your name on a made-up member's record
           </p>
         )}

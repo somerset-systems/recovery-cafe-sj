@@ -96,32 +96,26 @@ export default function Home() {
         boxSizing: 'border-box',
       }}
     >
-      {/* Staff preview notice. The fixed banner up top says the same thing, but this
-          sits in the content itself so it can't be missed or scrolled past, and so it
-          survives a screenshot cropped below the banner. */}
+      {/* Staff preview marker. The fixed banner up top is the primary warning; this
+          sits in the content so it can't be scrolled past and survives a screenshot
+          cropped below the banner. It names the events exception because staff would
+          otherwise assume the calendar is invented too and ignore a real schedule. */}
       {isStaffPreview() && (
-        <div
+        <p
           style={{
-            background: colors.previewNoticeBg,
-            border: `2px solid ${colors.previewNoticeBorder}`,
-            borderRadius: 12,
-            padding: 16,
-            boxSizing: 'border-box',
+            margin: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: fontSize.body,
+            fontWeight: 700,
+            lineHeight: 1.35,
+            color: colors.previewBg,
           }}
         >
-          <p style={{ margin: '0 0 6px 0', fontSize: fontSize.large, fontWeight: 800, color: colors.textDark }}>
-            Your name is real — nothing else here is
-          </p>
-          <p style={{ margin: 0, fontSize: fontSize.body, lineHeight: 1.45, color: colors.textDark }}>
-            This is what the app looks like to a member, using your name so it feels
-            real. The circle, the chores, the badges and the attendance below are all
-            made up. No real member's information is shown here, and nothing you do on
-            this screen changes anyone's record.
-          </p>
-          <p style={{ margin: '8px 0 0 0', fontSize: fontSize.body, lineHeight: 1.45, color: colors.textMedium }}>
-            The events list is the one real thing — that's the cafe's actual calendar.
-          </p>
-        </div>
+          <span aria-hidden="true">⚠</span>
+          Sample data — events are real, nothing else is
+        </p>
       )}
 
       {/* Circle Card */}
