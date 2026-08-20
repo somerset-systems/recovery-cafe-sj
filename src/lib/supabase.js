@@ -1,6 +1,6 @@
 import { fakeMembers, fakeAttendance, fakeEvents, fakeChoreMonths } from './fakeData.js'
 import { DEMO_MEMBER, DEMO_CHORE_MONTHS, buildDemoAttendance } from './demoData.js'
-import { isStaffPreview } from './staffSession.js'
+import { isStaffPreview, staffName } from './staffSession.js'
 
 const isFakeMode = !import.meta.env.VITE_SUPABASE_URL
 
@@ -103,9 +103,19 @@ if (!isFakeMode) {
 // Events are deliberately absent here: they come from the live Google Calendar via
 // lib/googleCalendar.js, not through `db`, so staff see the real schedule automatically.
 
+// The signed-in staff member's own name is used for display, so the app greets them the
+// way it would greet a member. Everything else about this member — circle, chores, badges,
+// attendance — stays invented. Because the real name no longer signals that the screen is
+// a demo, the banner and the Home notice are what carry that message now; don't remove
+// either one.
+function demoMemberForStaff() {
+  const name = staffName()
+  return name ? { ...DEMO_MEMBER, full_name: name } : DEMO_MEMBER
+}
+
 const demoDb = {
-  getMemberByPhone() { return Promise.resolve({ data: DEMO_MEMBER, error: null }) },
-  getMemberById()    { return Promise.resolve({ data: DEMO_MEMBER, error: null }) },
+  getMemberByPhone() { return Promise.resolve({ data: demoMemberForStaff(), error: null }) },
+  getMemberById()    { return Promise.resolve({ data: demoMemberForStaff(), error: null }) },
   getAttendanceForMember() { return Promise.resolve({ data: buildDemoAttendance(), error: null }) },
   getChoreMonthsForMember() {
     // Ascending by month, matching what the real RPC returns.

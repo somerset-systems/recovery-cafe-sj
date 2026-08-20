@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMember } from '../hooks/useMember.js'
 import { db } from '../lib/supabase.js'
-import { clearStaffSession } from '../lib/staffSession.js'
+import { clearStaffSession, isStaffPreview } from '../lib/staffSession.js'
 import Card from '../components/Card.jsx'
 import SectionLabel from '../components/SectionLabel.jsx'
 import BadgesCard from '../components/BadgesCard.jsx'
@@ -59,6 +59,13 @@ export default function Profile() {
         <p style={{ margin: 0, fontSize: fontSize.xlarge, fontWeight: 700, color: colors.textDark }}>
           {member.full_name}
         </p>
+        {/* In staff preview the name above is the staff member's own, so this card would
+            otherwise read as a genuine member record. Say plainly that it isn't. */}
+        {isStaffPreview() && (
+          <p style={{ margin: '6px 0 0 0', fontSize: fontSize.body, fontWeight: 600, color: colors.previewNoticeBorder }}>
+            Staff preview — your name on a made-up member's record
+          </p>
+        )}
       </Card>
 
       <Card>

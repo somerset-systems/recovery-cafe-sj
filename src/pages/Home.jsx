@@ -110,12 +110,13 @@ export default function Home() {
           }}
         >
           <p style={{ margin: '0 0 6px 0', fontSize: fontSize.large, fontWeight: 800, color: colors.textDark }}>
-            None of this is real
+            Your name is real — nothing else here is
           </p>
           <p style={{ margin: 0, fontSize: fontSize.body, lineHeight: 1.45, color: colors.textDark }}>
-            You're seeing the app as a made-up member named Alex Sample. The circle,
-            the chores, the badges and the attendance below are all invented so you can
-            look around. No real member's information is shown here.
+            This is what the app looks like to a member, using your name so it feels
+            real. The circle, the chores, the badges and the attendance below are all
+            made up. No real member's information is shown here, and nothing you do on
+            this screen changes anyone's record.
           </p>
           <p style={{ margin: '8px 0 0 0', fontSize: fontSize.body, lineHeight: 1.45, color: colors.textMedium }}>
             The events list is the one real thing — that's the cafe's actual calendar.

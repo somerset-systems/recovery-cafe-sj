@@ -13,8 +13,10 @@
 // development fixture and changes freely; this is what staff see in production, so
 // it is tuned to show the app at its best.
 
-// A deliberately sample-sounding name. The header greets by first name ("Alex"),
-// with the preview banner and the Home notice carrying the "this is made up" message.
+// full_name here is only a fallback. In a real staff session lib/supabase.js swaps in
+// the signed-in staff member's own name, so the app greets them the way it greets a
+// member. That means the NAME no longer signals the screen is fake — the preview banner,
+// the Home notice, and the Profile line are the only things doing that. Keep all three.
 export const DEMO_MEMBER = {
   id: 'staff-preview-member',
   client_id: 'DEMO',
